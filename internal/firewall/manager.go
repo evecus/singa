@@ -15,12 +15,11 @@ var (
 
 // Apply sets up nftables rules for the chosen proxy mode.
 // dataDir is used to write the temp nft config file.
-func Apply(mode config.ProxyMode, port int, lanProxy bool, dataDir string) error {
+func Apply(mode config.ProxyMode, port int, lanProxy bool, ipv6 bool, dataDir string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
 	SetNftConfPath(dataDir)
-	ipv6 := IsIPv6Supported()
 
 	// Always clean up first to avoid stale rules
 	Cleanup()
@@ -35,11 +34,9 @@ func Apply(mode config.ProxyMode, port int, lanProxy bool, dataDir string) error
 			return fmt.Errorf("redirect setup: %w", err)
 		}
 	case config.ModeTun:
-		// TUN is fully managed by sing-box (auto_route etc.), no nftables needed
 		log.Println("firewall: tun mode — rules managed by sing-box")
 		return nil
 	case config.ModeSystemProxy:
-		// system_proxy is handled outside nftables (gsettings / env vars)
 		log.Println("firewall: system_proxy mode — no nftables rules")
 		return nil
 	default:

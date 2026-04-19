@@ -3,9 +3,11 @@ package core
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -35,6 +37,7 @@ type Manager struct {
 	mode     config.ProxyMode
 	port     int
 	lanProxy bool
+	ipv6     bool
 
 	// Log ring buffer (last 500 lines)
 	logMu   sync.RWMutex
@@ -57,23 +60,31 @@ func (m *Manager) ConfigPath() string {
 }
 
 // Start applies firewall rules then launches sing-box.
-func (m *Manager) Start(mode config.ProxyMode, port int, lanProxy bool) error {
+func (m *Manager) Start(mode config.ProxyMode, port int, lanProxy bool, ipv6 bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if m.state == StateRunning {
 		return fmt.Errorf("already running")
 	}
-	if _, err := os.Stat(m.ConfigPath()); os.IsNotExist(err) {
+	srcConfig := m.ConfigPath()
+	if _, err := os.Stat(srcConfig); os.IsNotExist(err) {
 		return fmt.Errorf("config.json not found — please upload a configuration first")
+	}
+
+	// Copy config.json into run directory so sing-box can find it
+	dstConfig := filepath.Join(m.runDir, "config.json")
+	if err := copyFile(srcConfig, dstConfig); err != nil {
+		return fmt.Errorf("copy config to run dir: %w", err)
 	}
 
 	m.mode = mode
 	m.port = port
 	m.lanProxy = lanProxy
+	m.ipv6 = ipv6
 
 	// Apply nftables rules
-	if err := firewall.Apply(mode, port, lanProxy, m.dataDir); err != nil {
+	if err := firewall.Apply(mode, port, lanProxy, ipv6, m.dataDir); err != nil {
 		return fmt.Errorf("firewall: %w", err)
 	}
 
@@ -153,10 +164,29 @@ func (m *Manager) Status() map[string]interface{} {
 		"mode":     m.mode,
 		"port":     m.port,
 		"lanProxy": m.lanProxy,
+		"ipv6":     m.ipv6,
 		"pid":      pid,
 		"error":    m.errMsg,
 	}
 }
+
+// copyFile copies src to dst, creating dst if needed.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
+}
+
+
 
 // RecentLogs returns the last n log lines.
 func (m *Manager) RecentLogs(n int) []string {

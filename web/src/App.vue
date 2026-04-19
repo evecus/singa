@@ -91,6 +91,20 @@
           </label>
         </div>
 
+        <!-- IPv6 toggle -->
+        <div class="block">
+          <div class="block-label">IPv6 代理</div>
+          <label class="toggle-row" :class="{ 'toggle-row--disabled': status.state === 'running' }">
+            <div class="toggle" :class="{ 'toggle--on': ipv6 }" @click="status.state !== 'running' && (ipv6 = !ipv6)">
+              <div class="toggle-knob"></div>
+            </div>
+            <div class="toggle-info">
+              <span class="toggle-label">{{ ipv6 ? '已启用' : '已禁用' }}</span>
+              <span class="toggle-hint">{{ ipv6 ? '同时代理 IPv6 流量，下发 ip6 规则' : '仅代理 IPv4 流量' }}</span>
+            </div>
+          </label>
+        </div>
+
         <!-- Action buttons -->
         <div class="block block-actions">
           <button
@@ -133,6 +147,10 @@
             <span class="info-k">局域网</span>
             <span class="info-v mono">{{ status.lanProxy ? 'on' : 'off' }}</span>
           </div>
+          <div class="info-row">
+            <span class="info-k">IPv6</span>
+            <span class="info-v mono">{{ status.ipv6 ? 'on' : 'off' }}</span>
+          </div>
         </div>
       </section>
 
@@ -172,6 +190,7 @@ const modes = [
 
 const selectedMode = ref('tproxy')
 const lanProxy = ref(false)
+const ipv6 = ref(false)
 const configInfo = ref(null)
 const status = ref({ state: 'stopped', mode: '', port: 0, lanProxy: false, pid: 0, error: '' })
 const logs = ref([])
@@ -250,7 +269,7 @@ function onDrop(e) {
 async function startCore() {
   errorMsg.value = ''
   try {
-    await api('POST', '/start', { mode: selectedMode.value, lanProxy: lanProxy.value })
+    await api('POST', '/start', { mode: selectedMode.value, lanProxy: lanProxy.value, ipv6: ipv6.value })
     await pollStatus()
     startSSE()
   } catch (e) {
@@ -335,10 +354,10 @@ onUnmounted(() => {
   clearInterval(pollTimer)
 })
 
-// Sync selectedMode to running state on load
-watch(() => status.value.mode, (m) => {
-  if (m) selectedMode.value = m
-}, { immediate: true })
+// Sync selectedMode and toggles to running state on load
+watch(() => status.value.mode, (m) => { if (m) selectedMode.value = m }, { immediate: true })
+watch(() => status.value.lanProxy, (v) => { if (status.value.state === 'running') lanProxy.value = v }, { immediate: true })
+watch(() => status.value.ipv6, (v) => { if (status.value.state === 'running') ipv6.value = v }, { immediate: true })
 </script>
 
 <style>

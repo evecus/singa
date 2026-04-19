@@ -121,6 +121,7 @@ func (s *Server) configInfo(c *gin.Context) {
 type StartRequest struct {
 	Mode     string `json:"mode"`
 	LanProxy bool   `json:"lanProxy"`
+	IPv6     bool   `json:"ipv6"`
 }
 
 // POST /api/start
@@ -152,7 +153,7 @@ func (s *Server) start(c *gin.Context) {
 		return
 	}
 
-	if err := s.manager.Start(mode, port, req.LanProxy); err != nil {
+	if err := s.manager.Start(mode, port, req.LanProxy, req.IPv6); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
