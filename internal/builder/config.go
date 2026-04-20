@@ -187,11 +187,22 @@ func buildDNS(routeMode RouteMode, ipv6 bool) M {
 // ── Route ──────────────────────────────────────────────────────────────────
 
 func buildRoute(routeMode RouteMode, srsDir string) M {
+	// default_domain_resolver is required since sing-box 1.12.0.
+	// It tells the router which DNS server to use when resolving domains
+	// in route rules. We pick the appropriate resolver based on route mode:
+	// - whitelist/global: remote-dns (proxy-side resolver)
+	// - gfwlist: direct-dns (direct-side resolver, since most traffic is direct)
+	defaultResolver := "remote-dns"
+	if routeMode == RouteModeGFWList {
+		defaultResolver = "direct-dns"
+	}
+
 	return M{
-		"rules":                 buildRouteRules(routeMode),
-		"rule_set":              buildRuleSets(routeMode, srsDir),
-		"final":                 routeFinal(routeMode),
-		"auto_detect_interface": true,
+		"rules":                   buildRouteRules(routeMode),
+		"rule_set":                buildRuleSets(routeMode, srsDir),
+		"final":                   routeFinal(routeMode),
+		"auto_detect_interface":   true,
+		"default_domain_resolver": defaultResolver,
 	}
 }
 
