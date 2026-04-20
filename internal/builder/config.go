@@ -119,6 +119,10 @@ func buildInbounds(mode config.ProxyMode, ports Ports, listen string) []interfac
 // ── DNS ────────────────────────────────────────────────────────────────────
 
 func buildDNS(routeMode RouteMode, ipv6 bool) M {
+	// sing-box 1.12+: new DNS server format requires explicit "type" field.
+	// "strategy" moves to dns top-level or per-rule, not per-server.
+	// "address_resolver" renamed to "domain_resolver".
+	// "independent_cache" deprecated in 1.14, removed.
 	strategy := "ipv4_only"
 	if ipv6 {
 		strategy = "prefer_ipv4"
@@ -126,23 +130,24 @@ func buildDNS(routeMode RouteMode, ipv6 bool) M {
 
 	servers := []interface{}{
 		M{
-			"tag":              "remote-dns",
-			"address":          "tls://8.8.8.8",
-			"address_resolver": "bootstrap-dns",
-			"detour":           "proxy",
-			"strategy":         strategy,
+			"type":            "tls",
+			"tag":             "remote-dns",
+			"server":          "8.8.8.8",
+			"domain_resolver": "bootstrap-dns",
+			"detour":          "proxy",
 		},
 		M{
-			"tag":              "direct-dns",
-			"address":          "https://223.5.5.5/dns-query",
-			"address_resolver": "bootstrap-dns",
-			"detour":           "direct",
-			"strategy":         strategy,
+			"type":            "https",
+			"tag":             "direct-dns",
+			"server":          "223.5.5.5",
+			"domain_resolver": "bootstrap-dns",
+			"detour":          "direct",
 		},
 		M{
-			"tag":     "bootstrap-dns",
-			"address": "223.5.5.5",
-			"detour":  "direct",
+			"type":   "udp",
+			"tag":    "bootstrap-dns",
+			"server": "223.5.5.5",
+			"detour": "direct",
 		},
 	}
 
@@ -172,10 +177,10 @@ func buildDNS(routeMode RouteMode, ipv6 bool) M {
 	}
 
 	return M{
-		"servers":           servers,
-		"rules":             rules,
-		"final":             finalDNS,
-		"independent_cache": true,
+		"servers":  servers,
+		"rules":    rules,
+		"final":    finalDNS,
+		"strategy": strategy,
 	}
 }
 
