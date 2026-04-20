@@ -147,7 +147,6 @@ func buildDNS(routeMode RouteMode, ipv6 bool) M {
 			"type":   "udp",
 			"tag":    "bootstrap-dns",
 			"server": "223.5.5.5",
-			"detour": "direct",
 		},
 	}
 
