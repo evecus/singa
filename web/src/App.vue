@@ -416,7 +416,7 @@ onMounted(async () => {
     ipv6.value       = status.value.ipv6       || false
     startSSE()
   }
-  pollTimer = setInterval(pollStatus, 2000)
+  pollTimer = setInterval(pollStatus, 10000)
   if (logEl.value) logEl.value.addEventListener('scroll', onLogScroll)
 })
 onUnmounted(() => { stopSSE(); clearInterval(pollTimer) })
