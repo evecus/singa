@@ -15,20 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ── Download .srs rule files ─────────────────────────────────────────
-      - name: Download srs rule sets
-        run: |
-          mkdir -p assets/srs
-          BASE_SITE="https://github.com/SagerNet/sing-geosite/releases/latest/download"
-          BASE_IP="https://github.com/SagerNet/sing-geoip/releases/latest/download"
-          for name in geosite-cn geosite-private geosite-gfw "geosite-geolocation-!cn"; do
-            curl -fsSL "${BASE_SITE}/${name}.srs" -o "assets/srs/${name}.srs"
-            echo "Downloaded ${name}.srs ($(wc -c < "assets/srs/${name}.srs") bytes)"
-          done
-          for name in geoip-cn geoip-private; do
-            curl -fsSL "${BASE_IP}/${name}.srs" -o "assets/srs/${name}.srs"
-            echo "Downloaded ${name}.srs ($(wc -c < "assets/srs/${name}.srs") bytes)"
-          done
+
 
       # ── Frontend ─────────────────────────────────────────────────────────
       - uses: actions/setup-node@v4
