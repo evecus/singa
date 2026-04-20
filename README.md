@@ -1,85 +1,79 @@
 # singa
 
-基于 sing-box 的透明代理管理面板，nftables 规则严格移植自 [v2rayA](https://github.com/v2rayA/v2rayA)。
+基于 sing-box 的透明代理管理面板。nftables 规则移植自 [v2rayA](https://github.com/v2rayA/v2rayA)，路由规则参考 v2rayN sing-box 模板。
 
 ## 功能
 
-- 上传 `config.json`，自动解析 inbound 端口
-- 透明代理模式：`tproxy`（TCP+UDP）、`redirect`（TCP）、`tun`、`system_proxy`
-- 局域网代理开关（自动开启 `ip_forward`）
-- nftables 规则下发 / 清理（进程退出自动清理）
-- 实时日志流（SSE）
+| 功能 | 说明 |
+|------|------|
+| **节点模式** | 粘贴分享链接，面板自动生成完整 config |
+| **上传模式** | 上传自己写好的 config.json |
+| **透明代理** | tproxy / redirect / tun / system_proxy |
+| **路由模式** | 绕过大陆 / 仅代理 GFW / 全局代理 |
+| **局域网代理** | 自动开启 ip_forward，代理局域网设备 |
+| **IPv6** | 可选，下发 ip6 规则 |
+| **实时日志** | SSE 日志流，带颜色分级 |
+
+## 支持的节点协议
+
+`vmess` · `vless` · `trojan` · `shadowsocks` · `tuic` · `hysteria2 (hy2)`
+
+含完整 TLS/Reality/transport 字段支持（ws/grpc/http/httpupgrade/xhttp）。
 
 ## 使用
 
 ### 前置要求
 
-- Linux，需要 `root` 权限（nftables 操作）
-- 已安装 `/usr/bin/sing-box`
-- 已安装 `nft`（nftables）
+- Linux，root 权限
+- `/usr/bin/sing-box` 已安装
+- `nft`（nftables）可用
 
 ### 运行
 
 ```bash
-# 下载对应架构的二进制
 chmod +x singa-linux-amd64
 sudo ./singa-linux-amd64
+# 面板: http://localhost:8080
 ```
 
-面板默认监听 `:8080`，浏览器打开 `http://localhost:8080`。
-
-### 目录结构
+### 目录
 
 ```
-singa          # 二进制
+singa           ← 二进制
 data/
-  config.json  # 上传的 sing-box 配置
-  run/         # sing-box 工作目录（-D 参数）
-  singa-nft.conf  # 运行时生成的 nftables 规则文件（自动管理）
+  nodes.json    ← 持久化节点
+  config.json   ← 上传模式的用户配置
+  run/
+    config.json ← 运行时配置（自动生成/复制）
+  srs/          ← .srs 规则集文件（首次运行自动解压）
 ```
-
-### config.json 要求
-
-你的 `config.json` 中需要有对应模式的 inbound，例如 tproxy 模式：
-
-```json
-{
-  "inbounds": [
-    {
-      "type": "tproxy",
-      "tag": "tproxy-in",
-      "listen": "::",
-      "listen_port": 7893
-    }
-  ]
-}
-```
-
-redirect 模式同理，`"type": "redirect"`。tun / system_proxy 模式不需要特定 inbound。
 
 ## 构建
 
 ```bash
-# 1. 构建前端
+# 1. 前端
 cd web && npm install && npm run build && cd ..
 
-# 2. 构建二进制
+# 2. 后端
 go mod tidy
 go build -trimpath -ldflags="-s -w" -o singa .
 ```
 
-或直接推送 tag 触发 GitHub Actions：
+或推 tag 触发 GitHub Actions（自动下载 .srs 并编译 6 个平台）：
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.0 && git push origin v1.0.0
 ```
 
-## nftables 规则说明
+## 端口说明
 
-规则逻辑完全移植自 v2rayA：
+每次启动随机分配（10000–59999 范围内的空闲端口）：
 
-- **tproxy**：使用 `fwmark 0x40/0xc0` + 策略路由 table 100，PREROUTING/OUTPUT hook，connmark 保持连接状态，DNS 强制走代理防污染，本机接口 IP 动态写入 `@interface` set 防环路
-- **redirect**：NAT REDIRECT，私有/保留地址段硬编码白名单，本机接口 IP 动态维护
-- 两种模式均支持 IPv6（自动检测）
-- 进程退出（包括被 kill）时自动执行 `nft delete table inet v2raya` 并清理策略路由
+| 用途 | 说明 |
+|------|------|
+| DNS  | sing-box dns-in 监听端口 |
+| Mixed | SOCKS5+HTTP 混合入站 |
+| TProxy | tproxy 透明代理入站 |
+| Redirect | redirect 透明代理入站 |
+
+上传模式下端口从 config.json 的 inbound 解析获取。

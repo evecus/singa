@@ -16,38 +16,73 @@ import (
 //go:embed web/dist
 var webFS embed.FS
 
+//go:embed assets/srs
+var srsFS embed.FS
+
 func main() {
-	// Determine base directory (where the singa binary lives)
 	exe, err := os.Executable()
 	if err != nil {
-		log.Fatalf("cannot resolve executable path: %v", err)
+		log.Fatalf("executable path: %v", err)
 	}
 	baseDir := filepath.Dir(exe)
 	dataDir := filepath.Join(baseDir, "data")
-	runDir := filepath.Join(dataDir, "run")
+	runDir  := filepath.Join(dataDir, "run")
+	srsDir  := filepath.Join(dataDir, "srs")
 
-	for _, d := range []string{dataDir, runDir} {
+	for _, d := range []string{dataDir, runDir, srsDir} {
 		if err := os.MkdirAll(d, 0755); err != nil {
-			log.Fatalf("cannot create directory %s: %v", d, err)
+			log.Fatalf("mkdir %s: %v", d, err)
 		}
 	}
 
-	manager := core.NewManager(dataDir, runDir)
+	// Extract embedded .srs files to data/srs/ (skips if already present)
+	if err := extractSRS(srsFS, srsDir); err != nil {
+		log.Printf("warn: extract srs: %v", err)
+	}
 
-	// Catch SIGTERM / SIGINT / SIGHUP — clean up before exit
+	manager := core.NewManager(dataDir, runDir, srsDir)
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 	go func() {
 		sig := <-sigCh
-		log.Printf("singa: received signal %v, shutting down...", sig)
+		log.Printf("singa: signal %v — shutting down", sig)
 		manager.Stop()
 		firewall.Cleanup()
 		os.Exit(0)
 	}()
 
-	srv := api.NewServer(manager, dataDir, runDir, webFS)
-	log.Printf("singa: listening on :8080  (data=%s)", dataDir)
+	srv := api.NewServer(manager, dataDir, webFS)
+	log.Printf("singa: listening on :8080  data=%s", dataDir)
 	if err := srv.Run(":8080"); err != nil {
-		log.Fatalf("server error: %v", err)
+		log.Fatalf("server: %v", err)
 	}
+}
+
+func extractSRS(efs embed.FS, dst string) error {
+	entries, err := efs.ReadDir("assets/srs")
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		target := filepath.Join(dst, e.Name())
+		if _, err := os.Stat(target); err == nil {
+			continue // already extracted
+		}
+		data, err := efs.ReadFile("assets/srs/" + e.Name())
+		if err != nil {
+			return err
+		}
+		if len(data) == 0 {
+			continue // skip stub/empty files
+		}
+		if err := os.WriteFile(target, data, 0644); err != nil {
+			return err
+		}
+		log.Printf("singa: extracted srs/%s", e.Name())
+	}
+	return nil
 }
