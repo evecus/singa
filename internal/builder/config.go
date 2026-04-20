@@ -135,20 +135,17 @@ func buildDNS(routeMode RouteMode, ipv6 bool) M {
 			"server":          "1.1.1.1",
 			"domain_resolver": "bootstrap-dns",
 			"detour":          "proxy",
-			"server_port":     "853",
 		},
 		M{
 			"type":            "https",
 			"tag":             "direct-dns",
 			"server":          "223.5.5.5",
 			"domain_resolver": "bootstrap-dns",
-			"server_port":     "443",
 		},
 		M{
 			"type":           "udp",
 			"tag":            "bootstrap-dns",
 			"server":         "223.5.5.5",
-			"server_port":    "53",
 		},
 	}
 
