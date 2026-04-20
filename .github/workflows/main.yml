@@ -13,6 +13,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Generate tag
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "RELEASE_TAG=$(date -u +'%Y%m%d-%H%M%S')" >> $GITHUB_ENV
+
       - uses: actions/checkout@v4
 
       - name: Download srs rule sets
@@ -67,17 +71,18 @@ jobs:
       - name: Compress
         run: cd dist && for f in singa-*; do gzip -k "$f"; done
 
-      - name: Release
+      - name: Release (tag push)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.gz
           generate_release_notes: true
 
-      - name: Upload artifacts (non-tag)
-        if: "!startsWith(github.ref, 'refs/tags/')"
-        uses: actions/upload-artifact@v4
+      - name: Release (manual)
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
         with:
-          name: singa-binaries
-          path: dist/
-          retention-days: 7
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          files: dist/*.gz
+          generate_release_notes: false
