@@ -32,7 +32,9 @@ func NewServer(m *core.Manager, dataDir string, webFS embed.FS) *Server {
 func (s *Server) Run(addr string) error {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery(), cors.Default())
+	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipPaths: []string{"/api/status"},
+	}), gin.Recovery(), cors.Default())
 
 	a := r.Group("/api")
 	{
