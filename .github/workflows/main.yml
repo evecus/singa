@@ -15,7 +15,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-
+      - name: Download srs rule sets
+        run: |
+          mkdir -p assets/srs
+          BASE_SITE="https://github.com/MetaCubeX/meta-rules-dat/tree/sing/geo/geosite"
+          BASE_IP="https://github.com/MetaCubeX/meta-rules-dat/tree/sing/geo/geoip"
+          for name in cn private gfw "geolocation-!cn"; do
+            curl -fsSL "${BASE_SITE}/${name}.srs" -o "assets/srs/geosite-${name}.srs"
+            echo "Downloaded ${name}.srs ($(wc -c < "assets/srs/geosite-${name}.srs") bytes)"
+          done
+          for name in cn private; do
+            curl -fsSL "${BASE_IP}/${name}.srs" -o "assets/srs/geoip-${name}.srs"
+            echo "Downloaded ${name}.srs ($(wc -c < "assets/srs/geoip-${name}.srs") bytes)"
+          done
 
       # ── Frontend ─────────────────────────────────────────────────────────
       - uses: actions/setup-node@v4
