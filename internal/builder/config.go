@@ -38,7 +38,7 @@ func BuildConfig(
 
 	cfg := M{
 		"log": M{
-			"level":     "info",
+			"level":     "warning",
 			"timestamp": true,
 		},
 		"dns":      buildDNS(routeMode, ipv6),
