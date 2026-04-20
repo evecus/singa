@@ -75,7 +75,7 @@ func buildInbounds(mode config.ProxyMode, ports Ports, listen string) []interfac
 		M{
 			"tag":         "dns-in",
 			"type":        "direct",
-			"listen":      "::",
+			"listen":      listen,
 			"listen_port": 1053,
 		},
 		// Mixed (SOCKS5+HTTP) inbound for local proxy usage
@@ -106,7 +106,7 @@ func buildInbounds(mode config.ProxyMode, ports Ports, listen string) []interfac
 		inbounds = append(inbounds, M{
 			"tag":            "tun-in",
 			"type":           "tun",
-			"interface_name": "momo",
+			"interface_name": "singa",
 			"address":        []string{"172.31.0.1/30", "fdfe:dcba:9876::1/126"},
 			"auto_route":     false,
 			"auto_redirect":  false,
@@ -132,7 +132,7 @@ func buildDNS(routeMode RouteMode, ipv6 bool) M {
 		M{
 			"type":            "tls",
 			"tag":             "remote-dns",
-			"server":          "8.8.8.8",
+			"server":          "1.1.1.1",
 			"domain_resolver": "bootstrap-dns",
 			"detour":          "proxy",
 		},
@@ -205,7 +205,7 @@ func routeFinal(mode RouteMode) string {
 func buildRouteRules(routeMode RouteMode) []interface{} {
 	rules := []interface{}{
 		// Sniff protocol/domain on all connections (replaces deprecated inbound.sniff)
-		M{"action": "sniff"},
+		M{"action": "sniff", "timeout": "500ms" },
 		// Hijack DNS queries received on dns-in inbound
 		M{"inbound": []string{"dns-in"}, "action": "hijack-dns"},
 		// Private IPs and private domains always go direct
