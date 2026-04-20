@@ -2,8 +2,7 @@ name: Build
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -11,75 +10,72 @@ permissions:
 
 jobs:
   build:
-    name: Build singa
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # ── Frontend ────────────────────────────────────────────────────
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      # ── Download .srs rule files ─────────────────────────────────────────
+      - name: Download srs rule sets
+        run: |
+          mkdir -p assets/srs
+          BASE_SITE="https://github.com/SagerNet/sing-geosite/releases/latest/download"
+          BASE_IP="https://github.com/SagerNet/sing-geoip/releases/latest/download"
+          for name in geosite-cn geosite-private geosite-gfw "geosite-geolocation-!cn"; do
+            curl -fsSL "${BASE_SITE}/${name}.srs" -o "assets/srs/${name}.srs"
+            echo "Downloaded ${name}.srs ($(wc -c < "assets/srs/${name}.srs") bytes)"
+          done
+          for name in geoip-cn geoip-private; do
+            curl -fsSL "${BASE_IP}/${name}.srs" -o "assets/srs/${name}.srs"
+            echo "Downloaded ${name}.srs ($(wc -c < "assets/srs/${name}.srs") bytes)"
+          done
+
+      # ── Frontend ─────────────────────────────────────────────────────────
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: web/package.json
 
-      - name: Install frontend deps
-        working-directory: web
-        run: npm install
-
       - name: Build frontend
         working-directory: web
-        run: npm run build
+        run: npm install && npm run build
 
-      # ── Go ──────────────────────────────────────────────────────────
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      # ── Go ────────────────────────────────────────────────────────────────
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
           cache: true
 
-      - name: Download Go modules
-        run: go mod tidy
+      - run: go mod tidy
 
-      - name: Build linux/amd64
+      - name: Build binaries
         run: |
-          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/singa-linux-amd64 .
+          mkdir -p dist
+          build() {
+            local goos=$1 goarch=$2 goarm=$3 name=$4
+            echo "Building $name..."
+            env GOOS=$goos GOARCH=$goarch GOARM=$goarm \
+              go build -trimpath -ldflags="-s -w" -o "dist/$name" .
+          }
+          build linux amd64   ""  singa-linux-amd64
+          build linux arm64   ""  singa-linux-arm64
+          build linux arm     7   singa-linux-armv7
+          build linux 386     ""  singa-linux-386
+          build linux mips    ""  singa-linux-mips
+          build linux mipsle  ""  singa-linux-mipsle
 
-      - name: Build linux/arm64
-        run: |
-          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/singa-linux-arm64 .
+      - name: Compress
+        run: cd dist && for f in singa-*; do gzip -k "$f"; done
 
-      - name: Build linux/arm (armv7)
-        run: |
-          GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags="-s -w" -o dist/singa-linux-armv7 .
-
-      - name: Build linux/386
-        run: |
-          GOOS=linux GOARCH=386 go build -trimpath -ldflags="-s -w" -o dist/singa-linux-386 .
-
-      - name: Compress binaries
-        run: |
-          cd dist
-          for f in singa-*; do
-            gzip -k "$f"
-          done
-
-      # ── Release ─────────────────────────────────────────────────────
-      - name: Create Release
+      - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/singa-linux-amd64.gz
-            dist/singa-linux-arm64.gz
-            dist/singa-linux-armv7.gz
-            dist/singa-linux-386.gz
+          files: dist/*.gz
           generate_release_notes: true
 
-      - name: Upload artifacts (non-tag builds)
+      - name: Upload artifacts (non-tag)
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
