@@ -49,6 +49,7 @@ type StartParams struct {
 	ProxyMode  config.ProxyMode  `json:"proxyMode"`
 	LanProxy   bool              `json:"lanProxy"`
 	IPv6       bool              `json:"ipv6"`
+	BlockAds   bool              `json:"blockAds"`
 	RouteMode  builder.RouteMode `json:"routeMode"`
 	NodeID     string            `json:"nodeId"`
 	ConfigMode string            `json:"configMode"` // "upload" | "node"
@@ -322,7 +323,7 @@ func (m *Manager) prepareUploadConfig() error {
 }
 
 func (m *Manager) prepareNodeConfig(p StartParams, n *node.Node, ports builder.Ports) error {
-	data, err := builder.BuildConfig(p.ProxyMode, p.RouteMode, n, ports, p.LanProxy, p.IPv6, m.srsDir, IsReF1ndBuild())
+	data, err := builder.BuildConfig(p.ProxyMode, p.RouteMode, n, ports, p.LanProxy, p.IPv6, m.srsDir, IsReF1ndBuild(), p.BlockAds)
 	if err != nil {
 		return fmt.Errorf("build config: %w", err)
 	}
