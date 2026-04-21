@@ -438,6 +438,8 @@ func (m *Manager) Status() map[string]interface{} {
 		"routeMode":  m.params.RouteMode,
 		"lanProxy":   m.params.LanProxy,
 		"ipv6":       m.params.IPv6,
+		"blockAds":   m.params.BlockAds,
+		"nodeId":     m.params.NodeID,
 		"pid":        pid,
 		"ports":      m.ports,
 		"error":      m.errMsg,
