@@ -16,9 +16,9 @@ var (
 // Apply sets up nftables rules for the chosen proxy mode.
 // port is the transparent proxy inbound port (tproxy/redirect).
 // dnsPort is the sing-box dns-in port to redirect DNS traffic into.
-// cgroupID is the kernel cgroup v2 id for the sing-box process; traffic from
-// this cgroup is exempted from interception to prevent routing loops.
-func Apply(mode config.ProxyMode, port int, dnsPort int, lanProxy bool, ipv6 bool, dataDir string, cgroupID uint64) error {
+// gid is the numeric GID of the singbox group; traffic from processes running
+// with this supplementary group is exempted from interception to prevent routing loops.
+func Apply(mode config.ProxyMode, port int, dnsPort int, lanProxy bool, ipv6 bool, dataDir string, gid uint32) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -27,11 +27,11 @@ func Apply(mode config.ProxyMode, port int, dnsPort int, lanProxy bool, ipv6 boo
 
 	switch mode {
 	case config.ModeTProxy:
-		if err := setupTproxy(port, dnsPort, lanProxy, ipv6, cgroupID); err != nil {
+		if err := setupTproxy(port, dnsPort, lanProxy, ipv6, gid); err != nil {
 			return fmt.Errorf("tproxy setup: %w", err)
 		}
 	case config.ModeRedirect:
-		if err := setupRedirect(port, dnsPort, lanProxy, ipv6, cgroupID); err != nil {
+		if err := setupRedirect(port, dnsPort, lanProxy, ipv6, gid); err != nil {
 			return fmt.Errorf("redirect setup: %w", err)
 		}
 	case config.ModeTun:
