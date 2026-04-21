@@ -57,12 +57,19 @@ type StartParams struct {
 	ConfigMode string            `json:"configMode"` // "upload" | "node"
 }
 
+// savedState is persisted to data/state.json to survive restarts.
+type savedState struct {
+	Params  StartParams `json:"params"`
+	Running bool        `json:"running"`
+}
+
 // Manager controls the sing-box subprocess and firewall rules.
 type Manager struct {
-	mu      sync.Mutex
-	dataDir string
-	runDir  string
-	srsDir  string
+	mu         sync.Mutex
+	dataDir    string
+	runDir     string
+	srsDir     string
+	configsDir string
 
 	cmd    *exec.Cmd
 	state  State
@@ -70,8 +77,9 @@ type Manager struct {
 	params StartParams
 	ports  builder.Ports
 
-	nodeStore *storage.Store
-	nodes     []*node.Node
+	nodeStore  *storage.Store
+	stateStore *storage.Store
+	nodes      []*node.Node
 
 	logMu   sync.RWMutex
 	logBuf  []string
@@ -79,20 +87,50 @@ type Manager struct {
 }
 
 func NewManager(dataDir, runDir, srsDir string) *Manager {
+	configsDir := filepath.Join(dataDir, "configs")
 	m := &Manager{
-		dataDir:   dataDir,
-		runDir:    runDir,
-		srsDir:    srsDir,
-		state:     StateStopped,
-		logBuf:    make([]string, 0, 500),
-		nodeStore: storage.New(dataDir, "nodes.json"),
+		dataDir:    dataDir,
+		runDir:     runDir,
+		srsDir:     srsDir,
+		configsDir: configsDir,
+		state:      StateStopped,
+		logBuf:     make([]string, 0, 500),
+		nodeStore:  storage.New(dataDir, "nodes.json"),
+		stateStore: storage.New(dataDir, "state.json"),
 	}
 	m.loadNodes()
+	// Load last saved params so Status() can return them before AutoStart.
+	var ss savedState
+	if err := m.stateStore.Load(&ss); err == nil {
+		m.params = ss.Params
+	}
 	return m
 }
 
-func (m *Manager) ConfigPath() string    { return filepath.Join(m.dataDir, "config.json") }
+func (m *Manager) ConfigPath() string    { return filepath.Join(m.configsDir, "config.json") }
 func (m *Manager) RunConfigPath() string { return filepath.Join(m.runDir, "config.json") }
+
+// AutoStart reads state.json and re-launches sing-box if it was running
+// before the last shutdown. Call this once after NewManager, when the
+// server is fully initialised.
+func (m *Manager) AutoStart() {
+	var ss savedState
+	if err := m.stateStore.Load(&ss); err != nil || !ss.Running {
+		return
+	}
+	log.Printf("singa: last state was running, auto-starting sing-box")
+	if err := m.Start(ss.Params); err != nil {
+		log.Printf("singa: auto-start failed: %v", err)
+	}
+}
+
+// saveState persists current params and running flag. Must be called with m.mu held.
+func (m *Manager) saveState(running bool) {
+	ss := savedState{Params: m.params, Running: running}
+	if err := m.stateStore.Save(&ss); err != nil {
+		log.Printf("warn: save state: %v", err)
+	}
+}
 
 // ── Node management ────────────────────────────────────────────────────────
 
@@ -298,6 +336,7 @@ func (m *Manager) Start(p StartParams) error {
 	m.state = StateRunning
 	m.errMsg = ""
 	m.params = p
+	m.saveState(true)
 
 	if p.ProxyMode == config.ModeSystemProxy {
 		if err := sysproxy.Set(ports.Mixed); err != nil {
@@ -327,6 +366,7 @@ func (m *Manager) Start(p StartParams) error {
 			m.state = StateStopped
 			m.appendLog("sing-box stopped")
 		}
+		m.saveState(false)
 		m.cmd = nil
 	}()
 
@@ -353,6 +393,7 @@ func (m *Manager) Stop() {
 	}
 	m.state = StateStopped
 	m.cmd = nil
+	m.saveState(false)
 }
 
 // ── Config preparation ─────────────────────────────────────────────────────
