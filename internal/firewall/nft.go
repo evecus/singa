@@ -18,8 +18,8 @@ func SetNftConfPath(dir string) {
 
 // ── tproxy ─────────────────────────────────────────────────────────────────
 
-func setupTproxy(port int, dnsPort int, lanProxy bool, ipv6 bool, cgroupID uint64) error {
-	conf := buildTproxyTable(port, dnsPort, ipv6, cgroupID)
+func setupTproxy(port int, dnsPort int, lanProxy bool, ipv6 bool, gid uint32) error {
+	conf := buildTproxyTable(port, dnsPort, ipv6, gid)
 	if err := os.WriteFile(nftConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write nft conf: %w", err)
 	}
@@ -50,7 +50,7 @@ func setupTproxy(port int, dnsPort int, lanProxy bool, ipv6 bool, cgroupID uint6
 	return runCmd("nft -f " + nftConfPath)
 }
 
-func buildTproxyTable(port int, dnsPort int, ipv6 bool, cgroupID uint64) string {
+func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
 	// FIX: tp_pre chain uses separate ipv4/ipv6 nfproto matchers so that
 	// tproxy statements can specify the correct address family without conflict.
 	// Previously a single "meta nfproto { ipv4, ipv6 }" was used with
@@ -128,7 +128,7 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, cgroupID uint64) string 
 %s    }
 
     chain tp_out {
-        meta cgroup %d return
+        skgid %d return
         %s meta l4proto { tcp, udp } fib saddr type local fib daddr type != local jump tp_rule
     }
 
@@ -146,7 +146,7 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, cgroupID uint64) string 
 
     chain dns_redirect {
         # skip sing-box own traffic
-        meta cgroup %d return
+        skgid %d return
         # skip packets already going to our dns-in port
         meta l4proto { tcp, udp } th dport %d return
         # redirect all DNS to dns-in
@@ -163,13 +163,13 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, cgroupID uint64) string 
         jump dns_redirect
     }
 }
-`, tpPreFwdV4, tpPreFwdV6, tproxyLines, cgroupID, nfprotoOut, cgroupID, dnsPort, dnsPort, dnsRedirectV6)
+`, tpPreFwdV4, tpPreFwdV6, tproxyLines, gid, nfprotoOut, gid, dnsPort, dnsPort, dnsRedirectV6)
 }
 
 // ── redirect ───────────────────────────────────────────────────────────────
 
-func setupRedirect(port int, dnsPort int, lanProxy bool, ipv6 bool, cgroupID uint64) error {
-	conf := buildRedirectTable(port, dnsPort, ipv6, cgroupID)
+func setupRedirect(port int, dnsPort int, lanProxy bool, ipv6 bool, gid uint32) error {
+	conf := buildRedirectTable(port, dnsPort, ipv6, gid)
 	if err := os.WriteFile(nftConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write nft conf: %w", err)
 	}
@@ -181,7 +181,7 @@ func setupRedirect(port int, dnsPort int, lanProxy bool, ipv6 bool, cgroupID uin
 	return runCmd("nft -f " + nftConfPath)
 }
 
-func buildRedirectTable(port int, dnsPort int, ipv6 bool, cgroupID uint64) string {
+func buildRedirectTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
 	nfproto := "meta nfproto { ipv4, ipv6 }"
 	if !ipv6 {
 		nfproto = "meta nfproto ipv4"
@@ -232,14 +232,14 @@ func buildRedirectTable(port int, dnsPort int, ipv6 bool, cgroupID uint64) strin
         ip daddr @interface return
         ip6 daddr @whitelist6 return
         ip6 daddr @interface6 return
-        meta cgroup %d return
+        skgid %d return
         # skip DNS, handled by dns_redirect chain
         meta l4proto { tcp, udp } th dport 53 return
         %s meta l4proto tcp redirect to :%d
     }
 
     chain dns_redirect {
-        meta cgroup %d return
+        skgid %d return
         meta l4proto { tcp, udp } th dport %d return
         ip daddr != 127.0.0.1 meta l4proto { tcp, udp } th dport 53 redirect to :%d
 %s    }
@@ -256,7 +256,7 @@ func buildRedirectTable(port int, dnsPort int, ipv6 bool, cgroupID uint64) strin
         jump tp_rule
     }
 }
-`, nfproto, cgroupID, port, cgroupID, dnsPort, dnsPort, dnsRedirectV6)
+`, nfproto, gid, port, gid, dnsPort, dnsPort, dnsRedirectV6)
 }
 
 // ── Cleanup ────────────────────────────────────────────────────────────────
