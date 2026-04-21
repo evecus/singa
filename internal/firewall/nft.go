@@ -91,7 +91,7 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
 		)
 	}
 
-	return fmt.Sprintf(`table inet v2raya {
+	return fmt.Sprintf(`table inet singa {
     set interface {
         type ipv4_addr
         flags interval
@@ -195,7 +195,7 @@ func buildRedirectTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
 		)
 	}
 
-	return fmt.Sprintf(`table inet v2raya {
+	return fmt.Sprintf(`table inet singa {
     set whitelist {
         type ipv4_addr
         flags interval
@@ -262,7 +262,7 @@ func buildRedirectTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
 // ── Cleanup ────────────────────────────────────────────────────────────────
 
 func Cleanup() {
-	_ = runCmd("nft delete table inet v2raya")
+	_ = runCmd("nft delete table inet singa")
 	cleanupTproxyRoutes()
 	if nftConfPath != "" {
 		_ = os.Remove(nftConfPath)
@@ -287,7 +287,7 @@ func AddInterfaceIP(cidr string) {
 	if !strings.Contains(cidr, ".") {
 		set = "interface6"
 	}
-	if err := runCmd(fmt.Sprintf("nft add element inet v2raya %s { %s }", set, cidr)); err != nil {
+	if err := runCmd(fmt.Sprintf("nft add element inet singa %s { %s }", set, cidr)); err != nil {
 		log.Printf("firewall: add %s: %v", cidr, err)
 	}
 }
@@ -297,7 +297,7 @@ func RemoveInterfaceIP(cidr string) {
 	if !strings.Contains(cidr, ".") {
 		set = "interface6"
 	}
-	if err := runCmd(fmt.Sprintf("nft delete element inet v2raya %s { %s }", set, cidr)); err != nil {
+	if err := runCmd(fmt.Sprintf("nft delete element inet singa %s { %s }", set, cidr)); err != nil {
 		log.Printf("firewall: remove %s: %v", cidr, err)
 	}
 }
