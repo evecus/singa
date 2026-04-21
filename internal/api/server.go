@@ -17,16 +17,18 @@ import (
 	"github.com/singa/internal/config"
 	"github.com/singa/internal/core"
 	"github.com/singa/internal/node"
+	"github.com/singa/internal/updater"
 )
 
 type Server struct {
 	manager *core.Manager
 	dataDir string
+	srsDir  string
 	webFS   embed.FS
 }
 
-func NewServer(m *core.Manager, dataDir string, webFS embed.FS) *Server {
-	return &Server{manager: m, dataDir: dataDir, webFS: webFS}
+func NewServer(m *core.Manager, dataDir string, srsDir string, webFS embed.FS) *Server {
+	return &Server{manager: m, dataDir: dataDir, srsDir: srsDir, webFS: webFS}
 }
 
 func (s *Server) Run(addr string) error {
@@ -47,6 +49,7 @@ func (s *Server) Run(addr string) error {
 		a.POST("/stop", s.stop)
 		a.GET("/status", s.status)
 		a.GET("/logs", s.streamLogs)
+		a.POST("/update-rules", s.updateRules)
 	}
 
 	dist, err := fs.Sub(s.webFS, "web/dist")
@@ -238,3 +241,21 @@ func sseEscape(s string) string {
 }
 
 var _ = time.Now // suppress unused import if needed
+
+// ── Update rules ───────────────────────────────────────────────────────────
+
+func (s *Server) updateRules(c *gin.Context) {
+	results := updater.UpdateAll(s.srsDir)
+
+	failed := 0
+	for _, r := range results {
+		if r.Error != "" {
+			failed++
+		}
+	}
+	status := http.StatusOK
+	if failed == len(results) {
+		status = http.StatusBadGateway
+	}
+	c.JSON(status, gin.H{"results": results, "failed": failed, "total": len(results)})
+}
