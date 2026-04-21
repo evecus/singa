@@ -31,8 +31,6 @@ func BuildConfig(
 	if err != nil {
 		return nil, fmt.Errorf("outbound: %w", err)
 	}
-	// Mark proxy/direct outbound traffic so tproxy/tun rules skip it (prevents routing loops)
-	proxyOB["routing_mark"] = 128
 
 	listenAddr := "127.0.0.1"
 	if lanProxy {
@@ -48,7 +46,7 @@ func BuildConfig(
 		"inbounds": buildInbounds(proxyMode, ports, listenAddr),
 		"outbounds": []interface{}{
 			proxyOB,
-			M{"type": "direct", "tag": "direct", "routing_mark": 128},
+			M{"type": "direct", "tag": "direct"},
 			M{"type": "block", "tag": "block"},
 		},
 		"route": buildRoute(routeMode, srsDir, isReF1nd),
