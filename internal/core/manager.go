@@ -7,9 +7,10 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"strings"
 	"path/filepath"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/singa/internal/builder"
@@ -21,6 +22,9 @@ import (
 )
 
 const singboxBin = "/usr/bin/sing-box"
+
+// cgroupPath is the cgroup v2 directory dedicated to sing-box.
+const cgroupPath = "/sys/fs/cgroup/singa"
 
 // IsReF1ndBuild returns true when the installed sing-box binary was built
 // with the reF1nd fork (identified by "reF1nd" in the version string).
@@ -122,6 +126,41 @@ func (m *Manager) DeleteNode(id string) bool {
 	return false
 }
 
+// ── cgroup helpers ─────────────────────────────────────────────────────────
+
+// setupCgroup creates the dedicated cgroup directory and returns an open fd
+// to it. The caller must close the fd after cmd.Start() returns.
+// nftables rules use the cgroup id read from cgroup.id to skip sing-box traffic.
+func setupCgroup() (*os.File, error) {
+	if err := os.MkdirAll(cgroupPath, 0755); err != nil {
+		return nil, fmt.Errorf("mkdir cgroup: %w", err)
+	}
+	f, err := os.Open(cgroupPath)
+	if err != nil {
+		return nil, fmt.Errorf("open cgroup fd: %w", err)
+	}
+	return f, nil
+}
+
+// readCgroupID reads the kernel-assigned numeric id for our cgroup.
+func readCgroupID() (uint64, error) {
+	data, err := os.ReadFile(cgroupPath + "/cgroup.id")
+	if err != nil {
+		return 0, fmt.Errorf("read cgroup.id: %w", err)
+	}
+	var id uint64
+	_, err = fmt.Sscan(strings.TrimSpace(string(data)), &id)
+	return id, err
+}
+
+// cleanupCgroup removes the cgroup directory; must be called after the
+// sing-box process has exited.
+func cleanupCgroup() {
+	if err := os.Remove(cgroupPath); err != nil && !os.IsNotExist(err) {
+		log.Printf("warn: remove cgroup: %v", err)
+	}
+}
+
 // ── Start / Stop ───────────────────────────────────────────────────────────
 
 func (m *Manager) Start(p StartParams) error {
@@ -165,23 +204,50 @@ func (m *Manager) Start(p StartParams) error {
 		return fmt.Errorf("unknown config mode %q", p.ConfigMode)
 	}
 
+	// Set up cgroup before starting sing-box so the process is placed into it
+	// atomically at fork time (CgroupFD). nftables rules will use the cgroup id
+	// to skip sing-box's own outbound traffic, preventing routing loops for
+	// both node mode and upload mode configs.
+	cgroupFD, err := setupCgroup()
+	if err != nil {
+		return fmt.Errorf("cgroup: %w", err)
+	}
+
+	cgroupID, err := readCgroupID()
+	if err != nil {
+		cgroupFD.Close()
+		cleanupCgroup()
+		return fmt.Errorf("cgroup id: %w", err)
+	}
+
 	fwPort := ports.TProxy
 	if p.ProxyMode == config.ModeRedirect {
 		fwPort = ports.Redirect
 	}
-	if err := firewall.Apply(p.ProxyMode, fwPort, ports.DNS, p.LanProxy, p.IPv6, m.dataDir); err != nil {
+	if err := firewall.Apply(p.ProxyMode, fwPort, ports.DNS, p.LanProxy, p.IPv6, m.dataDir, cgroupID); err != nil {
+		cgroupFD.Close()
+		cleanupCgroup()
 		return fmt.Errorf("firewall: %w", err)
 	}
 
 	cmd := exec.Command(singboxBin, "run", "-D", m.runDir)
 	cmd.Dir = m.runDir
+	// Place sing-box into the dedicated cgroup atomically at fork.
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CgroupFD:    int(cgroupFD.Fd()),
+		UseCgroupFD: true,
+	}
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 
 	if err := cmd.Start(); err != nil {
+		cgroupFD.Close()
+		cleanupCgroup()
 		firewall.Stop()
 		return fmt.Errorf("start sing-box: %w", err)
 	}
+	// fd no longer needed once the process has started
+	cgroupFD.Close()
 
 	m.cmd = cmd
 	m.state = StateRunning
@@ -203,6 +269,7 @@ func (m *Manager) Start(p StartParams) error {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		firewall.Stop()
+		cleanupCgroup()
 		if m.params.ProxyMode == config.ModeSystemProxy {
 			if err := sysproxy.Clear(); err != nil {
 				log.Printf("warn: clear system proxy: %v", err)
@@ -235,6 +302,7 @@ func (m *Manager) Stop() {
 		}
 	}
 	firewall.Stop()
+	cleanupCgroup()
 	if m.params.ProxyMode == config.ModeSystemProxy {
 		if err := sysproxy.Clear(); err != nil {
 			log.Printf("warn: clear system proxy: %v", err)
