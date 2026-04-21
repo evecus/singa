@@ -52,8 +52,9 @@ func main() {
 
 	runDir := filepath.Join(dataDir, "run")
 	srsDir := filepath.Join(dataDir, "srs")
+	configsDir := filepath.Join(dataDir, "configs")
 
-	for _, d := range []string{dataDir, runDir, srsDir} {
+	for _, d := range []string{dataDir, runDir, srsDir, configsDir} {
 		if err := os.MkdirAll(d, 0755); err != nil {
 			log.Fatalf("mkdir %s: %v", d, err)
 		}
@@ -75,6 +76,8 @@ func main() {
 		firewall.Cleanup()
 		os.Exit(0)
 	}()
+
+	manager.AutoStart()
 
 	srv := api.NewServer(manager, dataDir, srsDir, webFS)
 	log.Printf("singa: listening on %s  data=%s", listen, dataDir)
