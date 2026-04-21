@@ -17,6 +17,7 @@ import (
 	"github.com/singa/internal/firewall"
 	"github.com/singa/internal/node"
 	"github.com/singa/internal/storage"
+	"github.com/singa/internal/sysproxy"
 )
 
 const singboxBin = "/usr/bin/sing-box"
@@ -187,6 +188,14 @@ func (m *Manager) Start(p StartParams) error {
 	m.errMsg = ""
 	m.params = p
 
+	if p.ProxyMode == config.ModeSystemProxy {
+		if err := sysproxy.Set(ports.Mixed); err != nil {
+			m.appendLog("warn: set system proxy: " + err.Error())
+		} else {
+			m.appendLog(fmt.Sprintf("system proxy set: http/https -> 127.0.0.1:%d", ports.Mixed))
+		}
+	}
+
 	go m.streamLog(stdout)
 	go m.streamLog(stderr)
 	go func() {
@@ -194,6 +203,11 @@ func (m *Manager) Start(p StartParams) error {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		firewall.Stop()
+		if m.params.ProxyMode == config.ModeSystemProxy {
+			if err := sysproxy.Clear(); err != nil {
+				log.Printf("warn: clear system proxy: %v", err)
+			}
+		}
 		if err != nil {
 			m.errMsg = err.Error()
 			m.state = StateError
@@ -221,6 +235,11 @@ func (m *Manager) Stop() {
 		}
 	}
 	firewall.Stop()
+	if m.params.ProxyMode == config.ModeSystemProxy {
+		if err := sysproxy.Clear(); err != nil {
+			log.Printf("warn: clear system proxy: %v", err)
+		}
+	}
 	m.state = StateStopped
 	m.cmd = nil
 }
