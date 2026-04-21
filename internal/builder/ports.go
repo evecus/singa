@@ -2,11 +2,10 @@ package builder
 
 import (
 	"fmt"
-	"math/rand"
 	"net"
 )
 
-// Ports holds the randomly assigned listen ports for one session.
+// Ports holds listen ports for one session.
 type Ports struct {
 	DNS      int `json:"dns"`
 	Mixed    int `json:"mixed"`
@@ -14,24 +13,39 @@ type Ports struct {
 	TProxy   int `json:"tproxy"`
 }
 
-// RandomPorts picks 4 available TCP ports in the range 10000–59999.
-func RandomPorts() Ports {
+// DefaultPorts returns preferred fixed ports, falling back to any free port if occupied.
+func DefaultPorts() Ports {
 	return Ports{
-		DNS:      freePort(),
-		Mixed:    freePort(),
-		Redirect: freePort(),
-		TProxy:   freePort(),
+		DNS:      preferPort(1053),
+		Mixed:    preferPort(2080),
+		Redirect: preferPort(7892),
+		TProxy:   preferPort(7893),
 	}
 }
 
-func freePort() int {
-	for {
-		p := 10000 + rand.Intn(50000)
-		l, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
-		if err != nil {
-			continue
-		}
-		l.Close()
-		return p
+// preferPort returns preferred if free, otherwise finds any available port.
+func preferPort(preferred int) int {
+	if isPortFree(preferred) {
+		return preferred
 	}
+	return anyFreePort()
+}
+
+func isPortFree(port int) bool {
+	l, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return false
+	}
+	l.Close()
+	return true
+}
+
+func anyFreePort() int {
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return 0
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	return port
 }

@@ -120,7 +120,7 @@ func (m *Manager) Start(p StartParams) error {
 		return fmt.Errorf("already running")
 	}
 
-	ports := builder.RandomPorts()
+	ports := builder.DefaultPorts()
 	m.ports = ports
 
 	switch p.ConfigMode {

@@ -1,71 +1,68 @@
 <template>
   <div class="app">
-    <header class="header">
-      <div class="header-left">
-        <span class="logo-mark">◈</span>
-        <span class="logo-text">singa</span>
-        <span class="logo-sub">proxy manager</span>
+
+    <!-- ── Top bar ── -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-icon">◈</span>
+        <span class="brand-name">singa</span>
+        <span class="brand-sub">PROXY MANAGER</span>
       </div>
-      <div class="header-right">
-        <div class="status-badge" :class="statusClass">
+      <div class="topbar-right">
+        <div class="status-pill" :class="statusClass">
           <span class="status-dot"></span>
           <span>{{ statusLabel }}</span>
         </div>
       </div>
     </header>
 
-    <main class="main">
-      <!-- ── Left panel: controls ── -->
-      <section class="panel panel-left">
+    <!-- ── Body ── -->
+    <div class="body">
 
-        <!-- Config mode tabs -->
-        <div class="block">
-          <div class="block-label">配置模式</div>
-          <div class="tab-row">
-            <button class="tab-btn" :class="{active: configMode==='node'}"
-              :disabled="isRunning" @click="configMode='node'">
-              ⬡ 节点模式
-            </button>
-            <button class="tab-btn" :class="{active: configMode==='upload'}"
-              :disabled="isRunning" @click="configMode='upload'">
-              ⬢ 上传配置
-            </button>
+      <!-- ══ LEFT: controls ══ -->
+      <aside class="sidebar">
+
+        <!-- Config mode -->
+        <div class="section">
+          <div class="section-title">配置模式</div>
+          <div class="seg">
+            <button class="seg-btn" :class="{on: configMode==='node'}"
+              :disabled="isRunning" @click="configMode='node'">⬡ 节点模式</button>
+            <button class="seg-btn" :class="{on: configMode==='upload'}"
+              :disabled="isRunning" @click="configMode='upload'">⬢ 上传配置</button>
           </div>
         </div>
 
-        <!-- ── NODE MODE ── -->
+        <!-- NODE MODE -->
         <template v-if="configMode==='node'">
 
-          <!-- Node list -->
-          <div class="block">
-            <div class="block-label-row">
-              <span class="block-label">节点</span>
-              <button class="btn-icon" @click="showImport=true" title="导入节点">＋</button>
+          <!-- Nodes -->
+          <div class="section">
+            <div class="section-title-row">
+              <span class="section-title">节点</span>
+              <button class="icon-btn" @click="showImport=true">＋ 导入</button>
             </div>
-            <div v-if="nodes.length===0" class="empty-hint">暂无节点，点击 ＋ 导入</div>
+            <div v-if="nodes.length===0" class="empty-tip">暂无节点，点击「导入」添加</div>
             <div v-else class="node-list">
               <div v-for="n in nodes" :key="n.id"
-                class="node-item" :class="{selected: selectedNodeId===n.id}"
+                class="node-row" :class="{active: selectedNodeId===n.id}"
                 @click="selectedNodeId=n.id">
-                <div class="node-left">
-                  <span class="node-proto" :class="'proto-'+n.protocol">{{ n.protocol }}</span>
-                  <div class="node-info">
-                    <span class="node-name">{{ n.name || n.address }}</span>
-                    <span class="node-addr">{{ n.address }}:{{ n.port }}</span>
-                  </div>
+                <span class="proto-badge" :class="'p-'+n.protocol">{{ n.protocol }}</span>
+                <div class="node-meta">
+                  <span class="node-name">{{ n.name || n.address }}</span>
+                  <span class="node-addr">{{ n.address }}:{{ n.port }}</span>
                 </div>
-                <button class="btn-del" :disabled="isRunning"
-                  @click.stop="deleteNode(n.id)">✕</button>
+                <button class="del-btn" :disabled="isRunning" @click.stop="deleteNode(n.id)">✕</button>
               </div>
             </div>
           </div>
 
           <!-- Route mode -->
-          <div class="block">
-            <div class="block-label">路由模式</div>
+          <div class="section">
+            <div class="section-title">路由模式</div>
             <div class="route-grid">
               <button v-for="r in routeModes" :key="r.value"
-                class="route-btn" :class="{active: routeMode===r.value}"
+                class="route-btn" :class="{on: routeMode===r.value}"
                 :disabled="isRunning" @click="routeMode=r.value">
                 <span class="route-icon">{{ r.icon }}</span>
                 <span class="route-name">{{ r.label }}</span>
@@ -76,58 +73,71 @@
 
         </template>
 
-        <!-- ── UPLOAD MODE ── -->
+        <!-- UPLOAD MODE -->
         <template v-else>
-          <div class="block">
-            <div class="block-label">配置文件</div>
-            <div class="drop-zone"
-              :class="{'drop-over': isDragging, loaded: uploadInfo}"
-              @dragover.prevent="isDragging=true"
-              @dragleave="isDragging=false"
-              @drop.prevent="onDrop"
-              @click="$refs.fileInput.click()">
+          <div class="section">
+            <div class="section-title">配置文件</div>
+            <div class="dropzone" :class="{over: isDragging, loaded: uploadInfo}"
+              @dragover.prevent="isDragging=true" @dragleave="isDragging=false"
+              @drop.prevent="onDrop" @click="$refs.fileInput.click()">
               <input ref="fileInput" type="file" accept=".json" style="display:none" @change="onFileChange"/>
-              <span class="drop-icon">{{ uploadInfo ? '✓' : '⬆' }}</span>
-              <span class="drop-text">{{ uploadInfo ? 'config.json 已加载' : '上传 config.json' }}</span>
-              <span class="drop-hint">点击或拖拽</span>
+              <span class="dz-icon">{{ uploadInfo ? '✓' : '↑' }}</span>
+              <span class="dz-text">{{ uploadInfo ? 'config.json 已加载' : '点击或拖拽上传 config.json' }}</span>
             </div>
-            <div v-if="uploadInfo && uploadInfo.inbounds.length" class="inbound-list">
+            <div v-if="uploadInfo && uploadInfo.inbounds && uploadInfo.inbounds.length" class="ib-list">
               <div v-for="ib in uploadInfo.inbounds" :key="ib.tag"
-                class="inbound-item" :class="{match: ib.type===proxyMode}">
+                class="ib-row" :class="{match: ib.type===proxyMode}">
                 <span class="ib-type">{{ ib.type }}</span>
-                <span class="ib-tag">{{ ib.tag||'—' }}</span>
+                <span class="ib-tag">{{ ib.tag || '—' }}</span>
                 <span class="ib-port" v-if="ib.port">:{{ ib.port }}</span>
               </div>
             </div>
           </div>
         </template>
 
-        <!-- Proxy mode (both modes) -->
-        <div class="block">
-          <div class="block-label">透明代理模式</div>
-          <div class="mode-grid">
+        <!-- Proxy mode -->
+        <div class="section">
+          <div class="section-title">透明代理模式</div>
+          <div class="proxy-grid">
             <button v-for="m in proxyModes" :key="m.value"
-              class="mode-btn" :class="{active: proxyMode===m.value}"
+              class="proxy-btn" :class="{on: proxyMode===m.value}"
               :disabled="isRunning" @click="proxyMode=m.value">
-              <span class="mode-icon">{{ m.icon }}</span>
-              <span class="mode-name">{{ m.label }}</span>
-              <span class="mode-desc">{{ m.desc }}</span>
+              <span class="proxy-icon">{{ m.icon }}</span>
+              <span class="proxy-name">{{ m.label }}</span>
+              <span class="proxy-desc">{{ m.desc }}</span>
             </button>
           </div>
         </div>
 
-        <!-- Toggles -->
-        <div class="block toggles-block">
-          <Toggle v-model="lanProxy" :disabled="isRunning"
-            label="局域网代理"
-            :hint="lanProxy ? '代理局域网设备，开启 ip_forward' : '仅代理本机流量'" />
-          <Toggle v-model="ipv6" :disabled="isRunning"
-            label="IPv6 代理"
-            :hint="ipv6 ? '同时代理 IPv6 流量' : '仅代理 IPv4 流量'" />
+        <!-- Toggles: LAN + IPv6 -->
+        <div class="section toggles-section">
+          <div class="section-title">网络选项</div>
+          <div class="toggle-group">
+            <label class="toggle-row" :class="{disabled: isRunning}">
+              <div class="toggle-track" :class="{on: lanProxy}"
+                @click="!isRunning && (lanProxy=!lanProxy)">
+                <div class="toggle-thumb"></div>
+              </div>
+              <div class="toggle-labels">
+                <span class="toggle-name">局域网代理</span>
+                <span class="toggle-hint">{{ lanProxy ? '代理局域网设备，开启 ip_forward' : '仅代理本机流量' }}</span>
+              </div>
+            </label>
+            <label class="toggle-row" :class="{disabled: isRunning}">
+              <div class="toggle-track" :class="{on: ipv6}"
+                @click="!isRunning && (ipv6=!ipv6)">
+                <div class="toggle-thumb"></div>
+              </div>
+              <div class="toggle-labels">
+                <span class="toggle-name">IPv6 代理</span>
+                <span class="toggle-hint">{{ ipv6 ? '同时代理 IPv6 流量' : '仅代理 IPv4 流量' }}</span>
+              </div>
+            </label>
+          </div>
         </div>
 
-        <!-- Actions -->
-        <div class="block block-actions">
+        <!-- Start / Stop -->
+        <div class="section action-section">
           <button v-if="!isRunning" class="btn-start"
             :disabled="startDisabled" @click="startCore">
             ▶ 启动
@@ -137,60 +147,60 @@
           </button>
         </div>
 
+        <!-- Error -->
         <div v-if="errorMsg" class="error-bar">⚠ {{ errorMsg }}</div>
 
         <!-- Runtime info -->
-        <div v-if="isRunning" class="info-table">
-          <div class="info-row" v-for="(v,k) in runtimeInfo" :key="k">
-            <span class="info-k">{{ k }}</span>
-            <span class="info-v">{{ v }}</span>
+        <div v-if="isRunning" class="section">
+          <div class="section-title">运行状态</div>
+          <div class="info-grid">
+            <template v-for="(v,k) in runtimeInfo" :key="k">
+              <span class="info-k">{{ k }}</span>
+              <span class="info-v">{{ v }}</span>
+            </template>
           </div>
         </div>
 
-      </section>
+      </aside>
 
-      <!-- ── Right panel: log terminal ── -->
-      <section class="panel panel-right">
-        <div class="log-header">
-          <span class="block-label" style="margin:0">LOGS</span>
+      <!-- ══ RIGHT: log ══ -->
+      <main class="logpane">
+        <div class="log-topbar">
+          <span class="log-title">LOGS</span>
           <span class="log-live" :class="{live: isRunning}">
             {{ isRunning ? '● LIVE' : '○ IDLE' }}
           </span>
+          <button class="log-clear" @click="logs=[]">清空</button>
         </div>
-        <div class="log-terminal" ref="logEl" @scroll="onLogScroll">
+        <div class="log-body" ref="logEl" @scroll="onLogScroll">
           <div v-if="logs.length===0" class="log-empty">等待核心启动…</div>
           <div v-for="(line,i) in logs" :key="i" class="log-line">
-            <span class="log-arrow">›</span>
-            <span class="log-text" :class="logClass(line)">{{ line }}</span>
+            <span class="log-arr">›</span>
+            <span class="log-txt" :class="logClass(line)">{{ line }}</span>
           </div>
         </div>
-        <div class="log-footer">
-          <span class="mono">{{ logs.length }} lines</span>
-          <button class="btn-clear" @click="logs=[]">清空</button>
-        </div>
-      </section>
-    </main>
+        <div class="log-foot">{{ logs.length }} lines</div>
+      </main>
+    </div>
 
-    <!-- Import modal -->
-    <div v-if="showImport" class="modal-overlay" @click.self="showImport=false">
+    <!-- ── Import modal ── -->
+    <div v-if="showImport" class="mask" @click.self="closeImport">
       <div class="modal">
-        <div class="modal-header">
+        <div class="modal-head">
           <span>导入节点</span>
-          <button class="modal-close" @click="showImport=false">✕</button>
+          <button class="modal-x" @click="closeImport">✕</button>
         </div>
         <div class="modal-body">
           <p class="modal-hint">每行一个分享链接，支持 vmess / vless / trojan / ss / tuic / hy2</p>
-          <textarea v-model="importText" class="import-textarea"
-            placeholder="vmess://...&#10;vless://...&#10;tuic://...&#10;hy2://..." />
-          <div v-if="importErrors.length" class="import-errors">
-            <div v-for="(e,i) in importErrors" :key="i" class="import-error-line">⚠ {{ e }}</div>
+          <textarea v-model="importText" class="import-ta"
+            placeholder="vmess://...&#10;vless://...&#10;tuic://...&#10;hy2://..."></textarea>
+          <div v-if="importErrors.length" class="import-errs">
+            <div v-for="(e,i) in importErrors" :key="i" class="import-err">⚠ {{ e }}</div>
           </div>
         </div>
-        <div class="modal-footer">
-          <button class="btn-cancel" @click="showImport=false">取消</button>
-          <button class="btn-import" :disabled="!importText.trim()" @click="doImport">
-            导入
-          </button>
+        <div class="modal-foot">
+          <button class="btn-cancel" @click="closeImport">取消</button>
+          <button class="btn-ok" :disabled="!importText.trim()" @click="doImport">导入</button>
         </div>
       </div>
     </div>
@@ -201,48 +211,30 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 
-// ── Sub-component: Toggle ──────────────────────────────────────────────────
-const Toggle = {
-  props: ['modelValue', 'disabled', 'label', 'hint'],
-  emits: ['update:modelValue'],
-  template: `
-    <label class="toggle-row" :class="{disabled}">
-      <div class="toggle" :class="{'toggle-on': modelValue}"
-        @click="!disabled && $emit('update:modelValue', !modelValue)">
-        <div class="toggle-knob"></div>
-      </div>
-      <div class="toggle-info">
-        <span class="toggle-label">{{ label }}</span>
-        <span class="toggle-hint">{{ hint }}</span>
-      </div>
-    </label>
-  `
-}
-
-// ── State ──────────────────────────────────────────────────────────────────
-const configMode  = ref('node')
-const proxyMode   = ref('tproxy')
-const routeMode   = ref('whitelist')
-const lanProxy    = ref(false)
-const ipv6        = ref(false)
+// ── state ──────────────────────────────────────────────────────────────────
+const configMode     = ref('node')
+const proxyMode      = ref('tproxy')
+const routeMode      = ref('whitelist')
+const lanProxy       = ref(false)
+const ipv6           = ref(false)
 const selectedNodeId = ref('')
 
-const nodes       = ref([])
-const uploadInfo  = ref(null)
-const status      = ref({ state: 'stopped' })
-const logs        = ref([])
-const errorMsg    = ref('')
-const isDragging  = ref(false)
-const showImport  = ref(false)
-const importText  = ref('')
+const nodes        = ref([])
+const uploadInfo   = ref(null)
+const status       = ref({ state: 'stopped' })
+const logs         = ref([])
+const errorMsg     = ref('')
+const isDragging   = ref(false)
+const showImport   = ref(false)
+const importText   = ref('')
 const importErrors = ref([])
-const logEl       = ref(null)
-const autoScroll  = ref(true)
+const logEl        = ref(null)
+const autoScroll   = ref(true)
 
 let sseSource = null
 let pollTimer = null
 
-// ── Computed ───────────────────────────────────────────────────────────────
+// ── computed ───────────────────────────────────────────────────────────────
 const isRunning = computed(() => status.value.state === 'running')
 
 const startDisabled = computed(() => {
@@ -252,34 +244,34 @@ const startDisabled = computed(() => {
 })
 
 const statusClass = computed(() => ({
-  'badge-running': status.value.state === 'running',
-  'badge-error':   status.value.state === 'error',
-  'badge-stopped': status.value.state === 'stopped',
+  'pill-run':  status.value.state === 'running',
+  'pill-err':  status.value.state === 'error',
+  'pill-stop': status.value.state === 'stopped',
 }))
 
-const statusLabel = computed(() => ({
-  running: '运行中', error: '错误', stopped: '已停止'
-}[status.value.state] || status.value.state))
+const statusLabel = computed(() =>
+  ({ running: '运行中', error: '错误', stopped: '已停止' }[status.value.state] || status.value.state)
+)
 
 const runtimeInfo = computed(() => {
   const s = status.value
-  const rows = {}
-  if (s.pid)        rows['PID']    = s.pid
-  if (s.proxyMode)  rows['透明代理'] = s.proxyMode
-  if (s.routeMode)  rows['路由']   = s.routeMode
-  if (s.configMode) rows['模式']   = s.configMode === 'node' ? '节点' : '上传'
-  rows['局域网'] = s.lanProxy ? 'on' : 'off'
-  rows['IPv6']   = s.ipv6    ? 'on' : 'off'
+  const r = {}
+  if (s.pid)       r['PID']    = s.pid
+  if (s.proxyMode) r['透明代理'] = s.proxyMode
+  if (s.routeMode) r['路由']   = s.routeMode
+  if (s.configMode)r['模式']   = s.configMode === 'node' ? '节点' : '上传'
+  r['局域网'] = s.lanProxy ? 'on' : 'off'
+  r['IPv6']   = s.ipv6    ? 'on' : 'off'
   if (s.ports) {
-    rows['端口(DNS)']    = s.ports.dns
-    rows['端口(Mixed)']  = s.ports.mixed
-    if (s.proxyMode === 'tproxy')   rows['端口(TProxy)']   = s.ports.tproxy
-    if (s.proxyMode === 'redirect') rows['端口(Redirect)'] = s.ports.redirect
+    r['DNS 端口']   = s.ports.dns
+    r['Mixed 端口'] = s.ports.mixed
+    if (s.proxyMode === 'tproxy')   r['TProxy 端口']   = s.ports.tproxy
+    if (s.proxyMode === 'redirect') r['Redirect 端口'] = s.ports.redirect
   }
-  return rows
+  return r
 })
 
-// ── Static config ──────────────────────────────────────────────────────────
+// ── static data ────────────────────────────────────────────────────────────
 const proxyModes = [
   { value: 'tproxy',       icon: '⬡', label: 'tproxy',       desc: 'TCP + UDP' },
   { value: 'redirect',     icon: '⬢', label: 'redirect',     desc: 'TCP only' },
@@ -287,18 +279,15 @@ const proxyModes = [
   { value: 'system_proxy', icon: '⬟', label: 'system proxy', desc: 'Env/gsettings' },
 ]
 const routeModes = [
-  { value: 'whitelist', icon: '◐', label: '绕过大陆', desc: '国内直连，其余代理' },
+  { value: 'whitelist', icon: '◐', label: '绕过大陆',    desc: '国内直连，其余代理' },
   { value: 'gfwlist',   icon: '◑', label: '仅代理 GFW', desc: '被墙域名代理，其余直连' },
-  { value: 'global',    icon: '●', label: '全局代理',  desc: '所有流量走代理' },
+  { value: 'global',    icon: '●', label: '全局代理',   desc: '所有流量走代理' },
 ]
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── helpers ────────────────────────────────────────────────────────────────
 async function api(method, path, body) {
   const opts = { method, headers: {} }
-  if (body) {
-    opts.headers['Content-Type'] = 'application/json'
-    opts.body = JSON.stringify(body)
-  }
+  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body) }
   const res = await fetch('/api' + path, opts)
   const data = await res.json()
   if (!res.ok) throw new Error(data.error || res.statusText)
@@ -307,13 +296,13 @@ async function api(method, path, body) {
 
 function logClass(line) {
   const l = line.toLowerCase()
-  if (l.includes('error') || l.includes('fatal')) return 'log-err'
-  if (l.includes('warn'))  return 'log-warn'
-  if (l.includes('info'))  return 'log-info'
+  if (l.includes('error') || l.includes('fatal')) return 'l-err'
+  if (l.includes('warn'))  return 'l-warn'
+  if (l.includes('info'))  return 'l-info'
   return ''
 }
 
-// ── Nodes ──────────────────────────────────────────────────────────────────
+// ── nodes ──────────────────────────────────────────────────────────────────
 async function loadNodes() {
   try { nodes.value = await api('GET', '/nodes') } catch {}
 }
@@ -339,11 +328,12 @@ async function doImport() {
   } catch (e) { importErrors.value = [e.message] }
 }
 
-// ── Config upload ──────────────────────────────────────────────────────────
+function closeImport() { showImport.value = false; importErrors.value = [] }
+
+// ── upload ─────────────────────────────────────────────────────────────────
 async function uploadFile(file) {
   errorMsg.value = ''
-  const fd = new FormData()
-  fd.append('config', file)
+  const fd = new FormData(); fd.append('config', file)
   try {
     const res = await fetch('/api/config', { method: 'POST', body: fd })
     const data = await res.json()
@@ -354,19 +344,18 @@ async function uploadFile(file) {
 function onFileChange(e) { if (e.target.files[0]) uploadFile(e.target.files[0]) }
 function onDrop(e) { isDragging.value = false; if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]) }
 
-// ── Core control ───────────────────────────────────────────────────────────
+// ── core control ───────────────────────────────────────────────────────────
 async function startCore() {
   errorMsg.value = ''
   try {
-    const body = {
+    await api('POST', '/start', {
       configMode: configMode.value,
       proxyMode:  proxyMode.value,
       lanProxy:   lanProxy.value,
       ipv6:       ipv6.value,
       routeMode:  routeMode.value,
       nodeId:     selectedNodeId.value,
-    }
-    await api('POST', '/start', body)
+    })
     await pollStatus()
     startSSE()
   } catch (e) { errorMsg.value = e.message }
@@ -377,7 +366,7 @@ async function stopCore() {
   catch (e) { errorMsg.value = e.message }
 }
 
-// ── Status ─────────────────────────────────────────────────────────────────
+// ── status ─────────────────────────────────────────────────────────────────
 async function pollStatus() {
   try {
     status.value = await api('GET', '/status')
@@ -404,7 +393,7 @@ function onLogScroll() {
   autoScroll.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 20
 }
 
-// ── Lifecycle ──────────────────────────────────────────────────────────────
+// ── lifecycle ──────────────────────────────────────────────────────────────
 onMounted(async () => {
   await Promise.all([loadNodes(), pollStatus()])
   try { uploadInfo.value = await api('GET', '/config/info') } catch {}
@@ -423,240 +412,360 @@ onUnmounted(() => { stopSSE(); clearInterval(pollTimer) })
 </script>
 
 <style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+/* ── reset & tokens ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-:root{
-  --bg:#0d0f12;--surface:#13161b;--surface2:#1a1e26;
-  --border:#252a35;--border2:#2f3545;
-  --text:#c8cdd8;--text2:#6b7280;--text3:#3d4455;
-  --accent:#4fffb0;--accent2:#00d4ff;--warn:#f59e0b;--err:#f87171;
-  --mono:'IBM Plex Mono',monospace;--sans:'Space Grotesk',sans-serif;
+:root {
+  --bg:       #f4f6f8;
+  --surface:  #ffffff;
+  --border:   #e2e6ea;
+  --border2:  #cdd3da;
+  --text:     #1a1d23;
+  --text2:    #5a6472;
+  --text3:    #9ba5b0;
+  --accent:   #00b37a;
+  --accent-h: #00956a;
+  --accent-bg:#e6f7f2;
+  --blue:     #2563eb;
+  --blue-bg:  #eff4ff;
+  --red:      #e53e3e;
+  --red-bg:   #fff5f5;
+  --warn:     #d97706;
+  --warn-bg:  #fffbeb;
+  --radius:   8px;
+  --mono:     'JetBrains Mono', 'Fira Code', 'IBM Plex Mono', monospace;
+  --sans:     'Inter', 'PingFang SC', 'Helvetica Neue', sans-serif;
 }
 
-body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;min-height:100vh}
-body::before{
-  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
-  background-image:linear-gradient(var(--border) 1px,transparent 1px),
-    linear-gradient(90deg,var(--border) 1px,transparent 1px);
-  background-size:40px 40px;opacity:0.25;
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
-.app{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column}
 
-/* ── Header ── */
-.header{display:flex;align-items:center;justify-content:space-between;
-  padding:0 28px;height:54px;background:var(--surface);
-  border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
-.header-left{display:flex;align-items:center;gap:10px}
-.logo-mark{color:var(--accent);font-size:20px}
-.logo-text{font-size:18px;font-weight:700;letter-spacing:.08em;color:#e8ecf4}
-.logo-sub{font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.14em;text-transform:uppercase}
-.status-badge{display:flex;align-items:center;gap:7px;padding:4px 12px;
-  border-radius:2px;font-family:var(--mono);font-size:11px;font-weight:600;
-  letter-spacing:.1em;text-transform:uppercase;border:1px solid;transition:all .25s}
-.status-dot{width:6px;height:6px;border-radius:50%}
-.badge-stopped{color:var(--text2);border-color:var(--border2)}
-.badge-stopped .status-dot{background:var(--text3)}
-.badge-running{color:var(--accent);border-color:var(--accent);background:rgba(79,255,176,.06)}
-.badge-running .status-dot{background:var(--accent);animation:pulse 1.5s infinite}
-.badge-error{color:var(--err);border-color:var(--err)}
-.badge-error .status-dot{background:var(--err)}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+/* ── app shell ── */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
 
-/* ── Layout ── */
-.main{flex:1;display:grid;grid-template-columns:380px 1fr;
-  gap:1px;background:var(--border);min-height:calc(100vh - 54px)}
-.panel{background:var(--surface);padding:22px 20px;
-  display:flex;flex-direction:column;gap:20px}
-.panel-right{padding:0;background:#0a0c0f}
+/* ── topbar ── */
+.topbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+  padding: 0 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand-icon { color: var(--accent); font-size: 20px; line-height: 1; }
+.brand-name { font-size: 17px; font-weight: 700; letter-spacing: .03em; }
+.brand-sub  { font-family: var(--mono); font-size: 10px; color: var(--text3);
+  letter-spacing: .15em; text-transform: uppercase; margin-top: 1px; }
 
-/* ── Blocks ── */
-.block-label{font-family:var(--mono);font-size:10px;font-weight:600;
-  letter-spacing:.18em;color:var(--text3);text-transform:uppercase;margin-bottom:10px}
-.block-label-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-.block-label-row .block-label{margin-bottom:0}
+/* status pill */
+.status-pill { display: flex; align-items: center; gap: 6px; padding: 4px 12px;
+  border-radius: 20px; font-size: 12px; font-weight: 600; border: 1.5px solid; }
+.status-dot  { width: 7px; height: 7px; border-radius: 50%; }
+.pill-stop   { color: var(--text3); border-color: var(--border2); }
+.pill-stop .status-dot { background: var(--text3); }
+.pill-run    { color: var(--accent); border-color: var(--accent); background: var(--accent-bg); }
+.pill-run .status-dot  { background: var(--accent); animation: blink 1.4s infinite; }
+.pill-err    { color: var(--red); border-color: var(--red); background: var(--red-bg); }
+.pill-err .status-dot  { background: var(--red); }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-/* ── Tabs ── */
-.tab-row{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.tab-btn{padding:9px;background:var(--surface2);border:1px solid var(--border);
-  border-radius:3px;color:var(--text2);cursor:pointer;
-  font-family:var(--sans);font-size:13px;font-weight:500;transition:all .15s}
-.tab-btn:hover:not(:disabled){border-color:var(--border2);color:var(--text)}
-.tab-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(79,255,176,.06)}
-.tab-btn:disabled{opacity:.5;cursor:not-allowed}
+/* ── body layout ── */
+.body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  overflow: hidden;
+  gap: 0;
+}
 
-/* ── Node list ── */
-.empty-hint{font-size:12px;color:var(--text3);text-align:center;padding:16px 0;font-family:var(--mono)}
-.node-list{display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto}
-.node-list::-webkit-scrollbar{width:3px}
-.node-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
-.node-item{display:flex;align-items:center;justify-content:space-between;
-  padding:8px 10px;background:var(--surface2);border:1px solid var(--border);
-  border-radius:3px;cursor:pointer;transition:all .15s}
-.node-item:hover{border-color:var(--border2)}
-.node-item.selected{border-color:var(--accent2);background:rgba(0,212,255,.05)}
-.node-left{display:flex;align-items:center;gap:8px;min-width:0}
-.node-proto{font-family:var(--mono);font-size:10px;font-weight:700;
-  padding:2px 6px;border-radius:2px;flex-shrink:0;text-transform:uppercase}
-.proto-vmess{background:rgba(79,255,176,.15);color:var(--accent)}
-.proto-vless{background:rgba(0,212,255,.15);color:var(--accent2)}
-.proto-trojan{background:rgba(245,158,11,.15);color:var(--warn)}
-.proto-ss{background:rgba(167,139,250,.15);color:#a78bfa}
-.proto-tuic{background:rgba(52,211,153,.15);color:#34d399}
-.proto-hysteria2{background:rgba(248,113,113,.15);color:var(--err)}
-.node-info{display:flex;flex-direction:column;min-width:0}
-.node-name{font-size:13px;font-weight:500;color:var(--text);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
-.node-addr{font-family:var(--mono);font-size:10px;color:var(--text3)}
-.btn-del{background:none;border:none;color:var(--text3);cursor:pointer;
-  font-size:12px;padding:2px 6px;transition:color .15s;flex-shrink:0}
-.btn-del:hover:not(:disabled){color:var(--err)}
-.btn-del:disabled{opacity:.4;cursor:not-allowed}
-.btn-icon{background:none;border:1px solid var(--border2);color:var(--accent);
-  cursor:pointer;padding:3px 10px;border-radius:2px;font-size:16px;line-height:1;
-  transition:all .15s}
-.btn-icon:hover{background:rgba(79,255,176,.08);border-color:var(--accent)}
+/* ── sidebar ── */
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.sidebar::-webkit-scrollbar { width: 4px; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
-/* ── Route grid ── */
-.route-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-.route-btn{display:flex;flex-direction:column;align-items:center;gap:2px;
-  padding:10px 6px;background:var(--surface2);border:1px solid var(--border);
-  border-radius:3px;cursor:pointer;transition:all .15s;color:var(--text2)}
-.route-btn:hover:not(:disabled){border-color:var(--border2);color:var(--text)}
-.route-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(79,255,176,.06)}
-.route-btn:disabled{opacity:.5;cursor:not-allowed}
-.route-icon{font-size:18px;line-height:1}
-.route-name{font-family:var(--mono);font-size:11px;font-weight:600}
-.route-desc{font-size:10px;opacity:.7;text-align:center}
+/* sections */
+.section { display: flex; flex-direction: column; gap: 8px; }
+.section-title {
+  font-size: 11px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text3);
+}
+.section-title-row {
+  display: flex; justify-content: space-between; align-items: center;
+}
 
-/* ── Drop zone ── */
-.drop-zone{border:1.5px dashed var(--border2);border-radius:4px;padding:20px;
-  display:flex;flex-direction:column;align-items:center;gap:4px;
-  cursor:pointer;transition:all .2s;background:var(--surface2)}
-.drop-zone:hover,.drop-zone.drop-over{border-color:var(--accent);background:rgba(79,255,176,.04)}
-.drop-zone.loaded{border-style:solid;border-color:var(--accent)}
-.drop-icon{font-size:22px;color:var(--text3)}
-.drop-zone.loaded .drop-icon{color:var(--accent)}
-.drop-text{font-size:13px;font-weight:500}
-.drop-hint{font-size:11px;color:var(--text3);font-family:var(--mono)}
-.inbound-list{margin-top:8px;display:flex;flex-direction:column;gap:3px}
-.inbound-item{display:flex;align-items:center;gap:8px;padding:5px 9px;
-  background:var(--surface2);border:1px solid var(--border);border-radius:2px;
-  font-family:var(--mono);font-size:11px}
-.inbound-item.match{border-color:var(--accent2)}
-.ib-type{color:var(--accent2);font-weight:600;min-width:64px}
-.ib-tag{color:var(--text2);flex:1}
-.ib-port{color:var(--accent);font-weight:600}
+/* segmented control */
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+  border: 1.5px solid var(--border2); border-radius: var(--radius); overflow: hidden; }
+.seg-btn {
+  padding: 9px; background: transparent; border: none; cursor: pointer;
+  font-family: var(--sans); font-size: 13px; font-weight: 500; color: var(--text2);
+  transition: all .15s;
+}
+.seg-btn:first-child { border-right: 1.5px solid var(--border2); }
+.seg-btn:hover:not(:disabled) { background: var(--bg); color: var(--text); }
+.seg-btn.on { background: var(--accent-bg); color: var(--accent); font-weight: 700; }
+.seg-btn:disabled { opacity: .45; cursor: not-allowed; }
 
-/* ── Proxy mode grid ── */
-.mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.mode-btn{display:flex;flex-direction:column;align-items:flex-start;gap:2px;
-  padding:10px 12px;background:var(--surface2);border:1px solid var(--border);
-  border-radius:3px;cursor:pointer;transition:all .15s;color:var(--text2);text-align:left}
-.mode-btn:hover:not(:disabled){border-color:var(--border2);color:var(--text)}
-.mode-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(79,255,176,.06)}
-.mode-btn:disabled{opacity:.5;cursor:not-allowed}
-.mode-icon{font-size:18px;line-height:1;margin-bottom:2px}
-.mode-name{font-family:var(--mono);font-size:11px;font-weight:600}
-.mode-desc{font-size:10px;opacity:.7}
+/* node list */
+.icon-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 10px; background: var(--accent); color: #fff;
+  border: none; border-radius: 6px; font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: background .15s;
+}
+.icon-btn:hover { background: var(--accent-h); }
 
-/* ── Toggles ── */
-.toggles-block{gap:12px}
-.toggle-row{display:flex;align-items:center;gap:12px;cursor:pointer}
-.toggle-row.disabled{opacity:.5;pointer-events:none}
-.toggle{width:42px;height:22px;background:var(--surface2);
-  border:1px solid var(--border2);border-radius:11px;position:relative;
-  transition:all .2s;flex-shrink:0;cursor:pointer}
-.toggle.toggle-on{background:rgba(79,255,176,.15);border-color:var(--accent)}
-.toggle-knob{position:absolute;top:3px;left:3px;width:14px;height:14px;
-  background:var(--text3);border-radius:50%;transition:all .2s}
-.toggle.toggle-on .toggle-knob{transform:translateX(20px);background:var(--accent)}
-.toggle-info{display:flex;flex-direction:column;gap:1px}
-.toggle-label{font-size:13px;font-weight:500;color:var(--text)}
-.toggle-hint{font-size:11px;color:var(--text3)}
+.empty-tip { font-size: 12px; color: var(--text3); text-align: center; padding: 14px 0; }
 
-/* ── Actions ── */
-.block-actions{flex-direction:row}
-.btn-start,.btn-stop{flex:1;display:flex;align-items:center;justify-content:center;
-  gap:8px;padding:11px;font-family:var(--sans);font-size:14px;font-weight:700;
-  letter-spacing:.04em;border:none;border-radius:3px;cursor:pointer;transition:all .15s}
-.btn-start{background:var(--accent);color:#0d0f12}
-.btn-start:hover:not(:disabled){background:#7fffcc;transform:translateY(-1px)}
-.btn-start:disabled{opacity:.4;cursor:not-allowed;transform:none}
-.btn-stop{background:transparent;color:var(--err);border:1.5px solid var(--err)}
-.btn-stop:hover{background:rgba(248,113,113,.1);transform:translateY(-1px)}
+.node-list { display: flex; flex-direction: column; gap: 5px; max-height: 200px; overflow-y: auto; }
+.node-list::-webkit-scrollbar { width: 3px; }
+.node-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
-/* ── Error / info ── */
-.error-bar{padding:9px 12px;background:rgba(248,113,113,.08);
-  border:1px solid rgba(248,113,113,.3);border-radius:3px;
-  color:var(--err);font-size:12px}
-.info-table{display:flex;flex-direction:column;gap:1px}
-.info-row{display:flex;justify-content:space-between;align-items:center;
-  padding:6px 10px;background:var(--surface2)}
-.info-row:first-child{border-radius:3px 3px 0 0}
-.info-row:last-child{border-radius:0 0 3px 3px}
-.info-k{font-family:var(--mono);font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em}
-.info-v{font-family:var(--mono);font-size:12px;color:var(--accent2)}
-.mono{font-family:var(--mono)}
+.node-row {
+  display: flex; align-items: center; gap: 9px; padding: 9px 10px;
+  border: 1.5px solid var(--border); border-radius: var(--radius);
+  cursor: pointer; transition: all .15s; background: var(--bg);
+}
+.node-row:hover { border-color: var(--border2); background: var(--surface); }
+.node-row.active { border-color: var(--accent); background: var(--accent-bg); }
 
-/* ── Log panel ── */
-.log-header{display:flex;justify-content:space-between;align-items:center;
-  padding:13px 18px;border-bottom:1px solid var(--border)}
-.log-live{font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:.1em}
-.log-live.live{color:var(--accent);animation:blink 1.5s step-end infinite}
-@keyframes blink{50%{opacity:.3}}
-.log-terminal{flex:1;overflow-y:auto;padding:14px 18px;
-  font-family:var(--mono);font-size:12px;line-height:1.8;
-  height:calc(100vh - 54px - 44px - 36px)}
-.log-terminal::-webkit-scrollbar{width:3px}
-.log-terminal::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
-.log-empty{color:var(--text3);text-align:center;padding:48px 0;font-size:13px}
-.log-line{display:flex;gap:9px}
-.log-arrow{color:var(--text3);user-select:none;flex-shrink:0}
-.log-text{color:var(--text2);word-break:break-all}
-.log-err{color:var(--err)!important}
-.log-warn{color:var(--warn)!important}
-.log-info{color:var(--text)!important}
-.log-footer{display:flex;justify-content:space-between;align-items:center;
-  padding:7px 18px;border-top:1px solid var(--border);
-  font-family:var(--mono);font-size:11px;color:var(--text3)}
-.btn-clear{background:none;border:none;color:var(--text3);
-  font-family:var(--mono);font-size:11px;cursor:pointer;padding:2px 6px;transition:color .15s}
-.btn-clear:hover{color:var(--text)}
+.proto-badge {
+  font-family: var(--mono); font-size: 9px; font-weight: 700;
+  padding: 2px 6px; border-radius: 4px; flex-shrink: 0; text-transform: uppercase;
+}
+.p-vmess     { background: #e6f7f2; color: #00856a; }
+.p-vless     { background: #eff4ff; color: #2563eb; }
+.p-trojan    { background: #fffbeb; color: #d97706; }
+.p-ss        { background: #f5f3ff; color: #7c3aed; }
+.p-tuic      { background: #ecfdf5; color: #059669; }
+.p-hysteria2 { background: #fff1f2; color: #e11d48; }
 
-/* ── Modal ── */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);
-  z-index:100;display:flex;align-items:center;justify-content:center}
-.modal{background:var(--surface);border:1px solid var(--border2);border-radius:6px;
-  width:520px;max-width:95vw;display:flex;flex-direction:column;overflow:hidden}
-.modal-header{display:flex;justify-content:space-between;align-items:center;
-  padding:16px 20px;border-bottom:1px solid var(--border);
-  font-weight:600;font-size:15px;color:var(--text)}
-.modal-close{background:none;border:none;color:var(--text3);cursor:pointer;
-  font-size:16px;padding:2px 6px;transition:color .15s}
-.modal-close:hover{color:var(--text)}
-.modal-body{padding:16px 20px;display:flex;flex-direction:column;gap:12px}
-.modal-hint{font-size:12px;color:var(--text3);font-family:var(--mono)}
-.import-textarea{width:100%;height:180px;background:var(--surface2);
-  border:1px solid var(--border2);border-radius:3px;
-  color:var(--text);font-family:var(--mono);font-size:12px;
-  padding:10px;resize:vertical;outline:none;line-height:1.7}
-.import-textarea:focus{border-color:var(--accent)}
-.import-errors{display:flex;flex-direction:column;gap:3px;max-height:80px;overflow-y:auto}
-.import-error-line{font-family:var(--mono);font-size:11px;color:var(--warn)}
-.modal-footer{display:flex;justify-content:flex-end;gap:8px;
-  padding:14px 20px;border-top:1px solid var(--border)}
-.btn-cancel{padding:8px 18px;background:var(--surface2);border:1px solid var(--border2);
-  color:var(--text2);border-radius:3px;cursor:pointer;font-family:var(--sans);transition:all .15s}
-.btn-cancel:hover{border-color:var(--text2);color:var(--text)}
-.btn-import{padding:8px 22px;background:var(--accent);color:#0d0f12;
-  border:none;border-radius:3px;cursor:pointer;font-family:var(--sans);
-  font-weight:700;transition:all .15s}
-.btn-import:hover:not(:disabled){background:#7fffcc}
-.btn-import:disabled{opacity:.4;cursor:not-allowed}
+.node-meta { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.node-name { font-size: 13px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node-addr { font-family: var(--mono); font-size: 10px; color: var(--text3); }
 
-@media(max-width:800px){
-  .main{grid-template-columns:1fr}
-  .panel-right{height:380px}
-  .log-terminal{height:280px}
+.del-btn { background: none; border: none; color: var(--text3); cursor: pointer;
+  padding: 2px 5px; font-size: 12px; border-radius: 4px; transition: all .15s; }
+.del-btn:hover:not(:disabled) { color: var(--red); background: var(--red-bg); }
+.del-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+/* route grid */
+.route-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.route-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 10px 6px; border: 1.5px solid var(--border); border-radius: var(--radius);
+  background: var(--bg); cursor: pointer; transition: all .15s; color: var(--text2);
+}
+.route-btn:hover:not(:disabled) { border-color: var(--border2); color: var(--text); background: var(--surface); }
+.route-btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.route-btn:disabled { opacity: .45; cursor: not-allowed; }
+.route-icon { font-size: 18px; line-height: 1; }
+.route-name { font-size: 12px; font-weight: 700; }
+.route-desc { font-size: 10px; opacity: .7; text-align: center; line-height: 1.3; }
+
+/* dropzone */
+.dropzone {
+  border: 2px dashed var(--border2); border-radius: var(--radius); padding: 20px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  cursor: pointer; transition: all .2s; background: var(--bg); color: var(--text2);
+}
+.dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.dropzone.loaded { border-style: solid; border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.dz-icon { font-size: 24px; }
+.dz-text { font-size: 13px; font-weight: 500; }
+
+.ib-list { display: flex; flex-direction: column; gap: 4px; }
+.ib-row {
+  display: flex; align-items: center; gap: 8px; padding: 5px 9px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+  font-family: var(--mono); font-size: 11px;
+}
+.ib-row.match { border-color: var(--accent); background: var(--accent-bg); }
+.ib-type { color: var(--blue); font-weight: 700; min-width: 60px; }
+.ib-tag  { color: var(--text2); flex: 1; }
+.ib-port { color: var(--accent); font-weight: 700; }
+
+/* proxy grid */
+.proxy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.proxy-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 10px 12px; border: 1.5px solid var(--border); border-radius: var(--radius);
+  background: var(--bg); cursor: pointer; transition: all .15s; color: var(--text2); text-align: left;
+}
+.proxy-btn:hover:not(:disabled) { border-color: var(--border2); color: var(--text); background: var(--surface); }
+.proxy-btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.proxy-btn:disabled { opacity: .45; cursor: not-allowed; }
+.proxy-icon { font-size: 16px; line-height: 1; margin-bottom: 2px; }
+.proxy-name { font-family: var(--mono); font-size: 11px; font-weight: 700; }
+.proxy-desc { font-size: 10px; opacity: .7; }
+
+/* toggles */
+.toggle-group { display: flex; flex-direction: column; gap: 10px; }
+.toggle-row { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.toggle-row.disabled { opacity: .45; pointer-events: none; }
+.toggle-track {
+  width: 44px; height: 24px; border-radius: 12px;
+  background: var(--border2); position: relative;
+  transition: background .2s; flex-shrink: 0; cursor: pointer;
+}
+.toggle-track.on { background: var(--accent); }
+.toggle-thumb {
+  position: absolute; top: 3px; left: 3px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  transition: transform .2s;
+}
+.toggle-track.on .toggle-thumb { transform: translateX(20px); }
+.toggle-labels { display: flex; flex-direction: column; gap: 1px; }
+.toggle-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.toggle-hint { font-size: 11px; color: var(--text3); }
+
+/* actions */
+.action-section { flex-direction: row; }
+.btn-start, .btn-stop {
+  flex: 1; padding: 12px; font-family: var(--sans); font-size: 15px; font-weight: 700;
+  border: none; border-radius: var(--radius); cursor: pointer; transition: all .15s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn-start { background: var(--accent); color: #fff; }
+.btn-start:hover:not(:disabled) { background: var(--accent-h); transform: translateY(-1px); }
+.btn-start:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+.btn-stop  { background: var(--red-bg); color: var(--red); border: 1.5px solid var(--red); }
+.btn-stop:hover { background: #fed7d7; }
+
+/* error */
+.error-bar {
+  padding: 9px 12px; background: var(--red-bg);
+  border: 1px solid #feb2b2; border-radius: var(--radius);
+  color: var(--red); font-size: 12px; line-height: 1.5;
+}
+
+/* info grid */
+.info-grid {
+  display: grid; grid-template-columns: auto 1fr; gap: 1px;
+  background: var(--border); border-radius: var(--radius); overflow: hidden;
+}
+.info-k, .info-v {
+  padding: 6px 10px; background: var(--bg); font-size: 12px;
+}
+.info-k { font-family: var(--mono); color: var(--text3); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.info-v { font-family: var(--mono); color: var(--blue); font-weight: 600; }
+
+/* ── log pane ── */
+.logpane {
+  display: flex; flex-direction: column;
+  background: #1a1d23; overflow: hidden;
+}
+.log-topbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,.08);
+  flex-shrink: 0;
+}
+.log-title { font-family: var(--mono); font-size: 11px; font-weight: 700;
+  letter-spacing: .15em; color: rgba(255,255,255,.35); }
+.log-live { font-family: var(--mono); font-size: 10px; color: rgba(255,255,255,.3);
+  letter-spacing: .1em; margin-right: auto; }
+.log-live.live { color: #00b37a; animation: blink 1.4s infinite; }
+.log-clear { background: none; border: 1px solid rgba(255,255,255,.12); color: rgba(255,255,255,.35);
+  padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 11px;
+  font-family: var(--mono); transition: all .15s; }
+.log-clear:hover { border-color: rgba(255,255,255,.3); color: rgba(255,255,255,.7); }
+
+.log-body {
+  flex: 1; overflow-y: auto; padding: 12px 16px;
+  font-family: var(--mono); font-size: 12px; line-height: 1.9;
+}
+.log-body::-webkit-scrollbar { width: 4px; }
+.log-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 2px; }
+.log-empty { color: rgba(255,255,255,.2); text-align: center; padding: 60px 0; }
+.log-line  { display: flex; gap: 8px; }
+.log-arr   { color: rgba(255,255,255,.2); user-select: none; flex-shrink: 0; }
+.log-txt   { color: rgba(255,255,255,.55); word-break: break-all; }
+.l-err  { color: #fc8181 !important; }
+.l-warn { color: #f6ad55 !important; }
+.l-info { color: rgba(255,255,255,.85) !important; }
+
+.log-foot {
+  flex-shrink: 0; padding: 6px 16px;
+  border-top: 1px solid rgba(255,255,255,.06);
+  font-family: var(--mono); font-size: 10px; color: rgba(255,255,255,.2);
+}
+
+/* ── modal ── */
+.mask {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.modal {
+  background: var(--surface); border-radius: 12px; width: 100%; max-width: 500px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.25); overflow: hidden; display: flex; flex-direction: column;
+}
+.modal-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  font-size: 15px; font-weight: 700;
+}
+.modal-x { background: none; border: none; color: var(--text3); cursor: pointer;
+  font-size: 16px; padding: 2px 6px; border-radius: 4px; transition: all .15s; }
+.modal-x:hover { background: var(--bg); color: var(--text); }
+.modal-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+.modal-hint { font-size: 12px; color: var(--text3); }
+.import-ta {
+  width: 100%; height: 160px; resize: vertical; padding: 10px;
+  border: 1.5px solid var(--border2); border-radius: var(--radius);
+  font-family: var(--mono); font-size: 12px; color: var(--text);
+  background: var(--bg); outline: none; line-height: 1.7;
+}
+.import-ta:focus { border-color: var(--accent); }
+.import-errs { display: flex; flex-direction: column; gap: 3px; max-height: 80px; overflow-y: auto; }
+.import-err  { font-family: var(--mono); font-size: 11px; color: var(--warn); }
+.modal-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 14px 20px; border-top: 1px solid var(--border);
+}
+.btn-cancel {
+  padding: 8px 18px; background: var(--bg); border: 1.5px solid var(--border2);
+  color: var(--text2); border-radius: var(--radius); cursor: pointer; font-family: var(--sans);
+  transition: all .15s; font-size: 13px;
+}
+.btn-cancel:hover { border-color: var(--border2); color: var(--text); background: var(--surface); }
+.btn-ok {
+  padding: 8px 22px; background: var(--accent); color: #fff;
+  border: none; border-radius: var(--radius); cursor: pointer;
+  font-family: var(--sans); font-weight: 700; font-size: 13px; transition: all .15s;
+}
+.btn-ok:hover:not(:disabled) { background: var(--accent-h); }
+.btn-ok:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ── mobile ── */
+@media (max-width: 768px) {
+  .body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .sidebar { max-height: 65vh; border-right: none; border-bottom: 1px solid var(--border); }
+  .logpane { min-height: 35vh; }
+  .log-body { font-size: 11px; }
+  .brand-sub { display: none; }
 }
 </style>
