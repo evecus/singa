@@ -214,13 +214,25 @@ func routeFinal(mode RouteMode) string {
 func buildRouteRules(routeMode RouteMode) []interface{} {
 	rules := []interface{}{
 		// Sniff protocol/domain on all connections (replaces deprecated inbound.sniff)
-		M{"action": "sniff", "timeout": "500ms" },
+		M{"action": "sniff", "timeout": "500ms"},
 		// Hijack DNS queries received on dns-in inbound
 		M{"inbound": []string{"dns-in"}, "action": "hijack-dns"},
-		// Private IPs and private domains always go direct
-		M{"ip_is_private": true, "outbound": "direct"},
-		M{"rule_set": []string{"geosite-private", "geoip-private"}, "outbound": "direct"},
 	}
+
+	// Block QUIC (UDP 443) for whitelist and gfwlist modes to force TCP,
+	// which is more reliably proxied. Not applied in global mode.
+	if routeMode == RouteModeWhitelist || routeMode == RouteModeGFWList {
+		rules = append(rules, M{
+			"network": []string{"udp"},
+			"port":    []int{443},
+			"action":  "reject",
+		})
+	}
+
+	// Private domains always go direct (ip_is_private removed intentionally)
+	rules = append(rules,
+		M{"rule_set": []string{"geosite-private", "geoip-private"}, "outbound": "direct"},
+	)
 
 	switch routeMode {
 	case RouteModeWhitelist:
