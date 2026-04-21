@@ -25,6 +25,7 @@ func BuildConfig(
 	lanProxy bool,
 	ipv6 bool,
 	srsDir string,
+	isReF1nd bool,
 ) ([]byte, error) {
 	proxyOB, err := NodeToOutbound(n, "proxy")
 	if err != nil {
@@ -48,7 +49,7 @@ func BuildConfig(
 			M{"type": "direct", "tag": "direct"},
 			M{"type": "block", "tag": "block"},
 		},
-		"route": buildRoute(routeMode, srsDir),
+		"route": buildRoute(routeMode, srsDir, isReF1nd),
 		"experimental": M{
 			"cache_file": M{
 				"enabled": true,
@@ -184,7 +185,7 @@ func buildDNS(routeMode RouteMode, ipv6 bool) M {
 
 // ── Route ──────────────────────────────────────────────────────────────────
 
-func buildRoute(routeMode RouteMode, srsDir string) M {
+func buildRoute(routeMode RouteMode, srsDir string, isReF1nd bool) M {
 	// default_domain_resolver is required since sing-box 1.12.0.
 	// It tells the router which DNS server to use when resolving domains
 	// in route rules. We pick the appropriate resolver based on route mode:
@@ -196,7 +197,7 @@ func buildRoute(routeMode RouteMode, srsDir string) M {
 	}
 
 	return M{
-		"rules":                   buildRouteRules(routeMode),
+		"rules":                   buildRouteRules(routeMode, isReF1nd),
 		"rule_set":                buildRuleSets(routeMode, srsDir),
 		"final":                   routeFinal(routeMode),
 		"auto_detect_interface":   true,
@@ -211,7 +212,7 @@ func routeFinal(mode RouteMode) string {
 	return "proxy"
 }
 
-func buildRouteRules(routeMode RouteMode) []interface{} {
+func buildRouteRules(routeMode RouteMode, isReF1nd bool) []interface{} {
 	rules := []interface{}{
 		// Sniff protocol/domain on all connections (replaces deprecated inbound.sniff)
 		M{"action": "sniff", "timeout": "500ms"},
@@ -236,11 +237,19 @@ func buildRouteRules(routeMode RouteMode) []interface{} {
 
 	switch routeMode {
 	case RouteModeWhitelist:
+		cnDomainRule := M{"rule_set": []string{"geosite-cn"}, "outbound": "direct"}
 		rules = append(rules,
 			// CN DNS server IPs → direct (prevent DNS pollution)
 			M{"ip_cidr": cnDNS(), "outbound": "direct"},
 			// CN domains → direct
-			M{"rule_set": []string{"geosite-cn"}, "outbound": "direct"},
+			cnDomainRule,
+		)
+		// reF1nd build: resolve CN domains before routing to get real IPs,
+		// so subsequent geoip-cn rule can match them correctly.
+		if isReF1nd {
+			rules = append(rules, M{"action": "resolve", "match_only": true})
+		}
+		rules = append(rules,
 			// CN IPs → direct
 			M{"rule_set": []string{"geoip-cn"}, "outbound": "direct"},
 		)
