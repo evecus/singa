@@ -96,7 +96,7 @@ func (s *Server) uploadConfig(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "no config file"})
 		return
 	}
-	dst := filepath.Join(s.dataDir, "config.json")
+	dst := s.manager.ConfigPath()
 	if err := c.SaveUploadedFile(file, dst); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -111,7 +111,7 @@ func (s *Server) uploadConfig(c *gin.Context) {
 }
 
 func (s *Server) configInfo(c *gin.Context) {
-	cfg, err := config.ParseConfig(filepath.Join(s.dataDir, "config.json"))
+	cfg, err := config.ParseConfig(s.manager.ConfigPath())
 	if err != nil {
 		c.JSON(404, gin.H{"error": "no valid config.json"})
 		return
