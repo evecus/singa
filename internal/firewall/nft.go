@@ -18,8 +18,8 @@ func SetNftConfPath(dir string) {
 
 // ── tproxy ─────────────────────────────────────────────────────────────────
 
-func setupTproxy(port int, lanProxy bool, ipv6 bool) error {
-	conf := buildTproxyTable(port, ipv6)
+func setupTproxy(port int, dnsPort int, lanProxy bool, ipv6 bool) error {
+	conf := buildTproxyTable(port, dnsPort, ipv6)
 	if err := os.WriteFile(nftConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write nft conf: %w", err)
 	}
@@ -50,7 +50,7 @@ func setupTproxy(port int, lanProxy bool, ipv6 bool) error {
 	return runCmd("nft -f " + nftConfPath)
 }
 
-func buildTproxyTable(port int, ipv6 bool) string {
+func buildTproxyTable(port int, dnsPort int, ipv6 bool) string {
 	nfproto := "meta nfproto { ipv4, ipv6 }"
 	if !ipv6 {
 		nfproto = "meta nfproto ipv4"
@@ -61,6 +61,17 @@ func buildTproxyTable(port int, ipv6 bool) string {
 		tproxyV6 = fmt.Sprintf(
 			"        %s meta l4proto { tcp, udp } mark & 0xc0 == 0x40 tproxy ip6 to [::1]:%d\n",
 			nfproto, port,
+		)
+	}
+
+	// DNS redirect chain: redirect port-53 traffic to sing-box dns-in.
+	// Must be in a nat table (separate from the mangle tproxy table).
+	// Skips packets already marked as sing-box own traffic (0x80).
+	dnsRedirectV6 := ""
+	if ipv6 {
+		dnsRedirectV6 = fmt.Sprintf(
+			"        ip6 daddr != ::1 meta l4proto { tcp, udp } th dport 53 redirect to :%d\n",
+			dnsPort,
 		)
 	}
 
@@ -76,6 +87,8 @@ func buildTproxyTable(port int, ipv6 bool) string {
         auto-merge
     }
 
+    # ── mangle: tproxy for normal traffic ──────────────────────────────────
+
     chain tp_mark {
         tcp flags & (fin | syn | rst | ack) == syn meta mark set mark | 0x40
         meta l4proto udp ct state new meta mark set mark | 0x40
@@ -87,7 +100,8 @@ func buildTproxyTable(port int, ipv6 bool) string {
         meta mark & 0xc0 == 0x40 return
         ip daddr @interface return
         ip6 daddr @interface6 return
-        meta l4proto { tcp, udp } th dport 53 jump tp_mark
+        # DNS (port 53) is handled by nat redirect below, skip here
+        meta l4proto { tcp, udp } th dport 53 return
         meta mark & 0xc0 == 0x40 return
         jump tp_mark
     }
@@ -103,23 +117,44 @@ func buildTproxyTable(port int, ipv6 bool) string {
         %s meta l4proto { tcp, udp } fib saddr type local fib daddr type != local jump tp_rule
     }
 
-    chain prerouting {
+    chain prerouting_mangle {
         type filter hook prerouting priority mangle - 5; policy accept;
         jump tp_pre
     }
 
-    chain output {
+    chain output_mangle {
         type route hook output priority mangle - 5; policy accept;
         jump tp_out
     }
+
+    # ── nat: redirect port 53 → sing-box dns-in ────────────────────────────
+
+    chain dns_redirect {
+        # skip sing-box own traffic
+        meta mark & 0x80 == 0x80 return
+        # skip packets already going to our dns-in port
+        meta l4proto { tcp, udp } th dport %d return
+        # redirect all DNS to dns-in
+        ip daddr != 127.0.0.1 meta l4proto { tcp, udp } th dport 53 redirect to :%d
+%s    }
+
+    chain prerouting_nat {
+        type nat hook prerouting priority dstnat - 5; policy accept;
+        jump dns_redirect
+    }
+
+    chain output_nat {
+        type nat hook output priority -105; policy accept;
+        jump dns_redirect
+    }
 }
-`, nfproto, nfproto, port, tproxyV6, nfproto)
+`, nfproto, nfproto, port, tproxyV6, dnsPort, dnsPort, dnsRedirectV6)
 }
 
 // ── redirect ───────────────────────────────────────────────────────────────
 
-func setupRedirect(port int, lanProxy bool, ipv6 bool) error {
-	conf := buildRedirectTable(port, ipv6)
+func setupRedirect(port int, dnsPort int, lanProxy bool, ipv6 bool) error {
+	conf := buildRedirectTable(port, dnsPort, ipv6)
 	if err := os.WriteFile(nftConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write nft conf: %w", err)
 	}
@@ -131,11 +166,20 @@ func setupRedirect(port int, lanProxy bool, ipv6 bool) error {
 	return runCmd("nft -f " + nftConfPath)
 }
 
-func buildRedirectTable(port int, ipv6 bool) string {
+func buildRedirectTable(port int, dnsPort int, ipv6 bool) string {
 	nfproto := "meta nfproto { ipv4, ipv6 }"
 	if !ipv6 {
 		nfproto = "meta nfproto ipv4"
 	}
+
+	dnsRedirectV6 := ""
+	if ipv6 {
+		dnsRedirectV6 = fmt.Sprintf(
+			"        ip6 daddr != ::1 meta l4proto { tcp, udp } th dport 53 redirect to :%d\n",
+			dnsPort,
+		)
+	}
+
 	return fmt.Sprintf(`table inet v2raya {
     set whitelist {
         type ipv4_addr
@@ -174,20 +218,30 @@ func buildRedirectTable(port int, ipv6 bool) string {
         ip6 daddr @whitelist6 return
         ip6 daddr @interface6 return
         meta mark & 0x80 == 0x80 return
+        # skip DNS, handled by dns_redirect chain
+        meta l4proto { tcp, udp } th dport 53 return
         %s meta l4proto tcp redirect to :%d
     }
 
+    chain dns_redirect {
+        meta mark & 0x80 == 0x80 return
+        meta l4proto { tcp, udp } th dport %d return
+        ip daddr != 127.0.0.1 meta l4proto { tcp, udp } th dport 53 redirect to :%d
+%s    }
+
     chain tp_pre {
         type nat hook prerouting priority dstnat - 5; policy accept;
+        jump dns_redirect
         jump tp_rule
     }
 
     chain tp_out {
         type nat hook output priority -105; policy accept;
+        jump dns_redirect
         jump tp_rule
     }
 }
-`, nfproto, port)
+`, nfproto, port, dnsPort, dnsPort, dnsRedirectV6)
 }
 
 // ── Cleanup ────────────────────────────────────────────────────────────────
@@ -211,7 +265,7 @@ func cleanupTproxyRoutes() {
 	}
 }
 
-// ── Interface IP management (called by watcher) ────────────────────────────
+// ── Interface IP management ────────────────────────────────────────────────
 
 func AddInterfaceIP(cidr string) {
 	set := "interface"

@@ -14,7 +14,9 @@ var (
 )
 
 // Apply sets up nftables rules for the chosen proxy mode.
-func Apply(mode config.ProxyMode, port int, lanProxy bool, ipv6 bool, dataDir string) error {
+// port is the transparent proxy inbound port (tproxy/redirect).
+// dnsPort is the sing-box dns-in port to redirect DNS traffic into.
+func Apply(mode config.ProxyMode, port int, dnsPort int, lanProxy bool, ipv6 bool, dataDir string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -23,11 +25,11 @@ func Apply(mode config.ProxyMode, port int, lanProxy bool, ipv6 bool, dataDir st
 
 	switch mode {
 	case config.ModeTProxy:
-		if err := setupTproxy(port, lanProxy, ipv6); err != nil {
+		if err := setupTproxy(port, dnsPort, lanProxy, ipv6); err != nil {
 			return fmt.Errorf("tproxy setup: %w", err)
 		}
 	case config.ModeRedirect:
-		if err := setupRedirect(port, lanProxy, ipv6); err != nil {
+		if err := setupRedirect(port, dnsPort, lanProxy, ipv6); err != nil {
 			return fmt.Errorf("redirect setup: %w", err)
 		}
 	case config.ModeTun:

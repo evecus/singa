@@ -157,7 +157,7 @@ func (m *Manager) Start(p StartParams) error {
 	if p.ProxyMode == config.ModeRedirect {
 		fwPort = ports.Redirect
 	}
-	if err := firewall.Apply(p.ProxyMode, fwPort, p.LanProxy, p.IPv6, m.dataDir); err != nil {
+	if err := firewall.Apply(p.ProxyMode, fwPort, ports.DNS, p.LanProxy, p.IPv6, m.dataDir); err != nil {
 		return fmt.Errorf("firewall: %w", err)
 	}
 
