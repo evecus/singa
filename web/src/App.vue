@@ -131,6 +131,16 @@
                 <span class="toggle-hint">{{ ipv6 ? '同时代理 IPv6 流量' : '仅代理 IPv4 流量' }}</span>
               </div>
             </label>
+            <label class="toggle-row" :class="{disabled: isRunning || configMode==='upload'}">
+              <div class="toggle-track" :class="{on: blockAds}"
+                @click="!isRunning && configMode!=='upload' && (blockAds=!blockAds)">
+                <div class="toggle-thumb"></div>
+              </div>
+              <div class="toggle-labels">
+                <span class="toggle-name">去广告</span>
+                <span class="toggle-hint">{{ configMode==='upload' ? '仅节点模式可用' : blockAds ? '拦截广告域名请求' : '不拦截广告' }}</span>
+              </div>
+            </label>
           </div>
         </div>
 
@@ -216,6 +226,7 @@ const proxyMode      = ref('tproxy')
 const routeMode      = ref('whitelist')
 const lanProxy       = ref(false)
 const ipv6           = ref(false)
+const blockAds       = ref(false)
 const selectedNodeId = ref('')
 
 const nodes        = ref([])
@@ -346,6 +357,7 @@ async function startCore() {
       proxyMode:  proxyMode.value,
       lanProxy:   lanProxy.value,
       ipv6:       ipv6.value,
+      blockAds:   blockAds.value,
       routeMode:  routeMode.value,
       nodeId:     selectedNodeId.value,
     })
