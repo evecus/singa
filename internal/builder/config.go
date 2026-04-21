@@ -252,6 +252,8 @@ func buildRouteRules(routeMode RouteMode) []interface{} {
 			M{"ip_cidr": foreignDNS(), "outbound": "proxy"},
 			// GFW/non-CN domains → proxy
 			M{"rule_set": []string{"geosite-gfw", "geosite-geolocation-!cn"}, "outbound": "proxy"},
+			// Well-known foreign service IPs → proxy
+			M{"rule_set": []string{"geoip-google", "geoip-facebook", "geoip-telegram", "geoip-twitter", "geoip-netflix"}, "outbound": "proxy"},
 		)
 		// final="direct" routes everything else
 
@@ -269,7 +271,8 @@ func buildRuleSets(routeMode RouteMode, srsDir string) []interface{} {
 	case RouteModeWhitelist:
 		tags = append(tags, "geosite-cn", "geoip-cn")
 	case RouteModeGFWList:
-		tags = append(tags, "geosite-gfw", "geosite-geolocation-!cn")
+		tags = append(tags, "geosite-gfw", "geosite-geolocation-!cn",
+			"geoip-google", "geoip-facebook", "geoip-telegram", "geoip-twitter", "geoip-netflix")
 	}
 
 	out := make([]interface{}, 0, len(tags))
