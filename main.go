@@ -76,7 +76,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	srv := api.NewServer(manager, dataDir, webFS)
+	srv := api.NewServer(manager, dataDir, srsDir, webFS)
 	log.Printf("singa: listening on %s  data=%s", listen, dataDir)
 	if err := srv.Run(listen); err != nil {
 		log.Fatalf("server: %v", err)
