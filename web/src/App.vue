@@ -8,6 +8,10 @@
         <span class="brand-name">singa</span>
         <span class="brand-sub">PROXY MANAGER</span>
       </div>
+      <nav class="tab-nav">
+        <button class="tab-btn" :class="{active: tab==='config'}" @click="tab='config'">配置</button>
+        <button class="tab-btn" :class="{active: tab==='logs'}"   @click="tab='logs'">日志</button>
+      </nav>
       <div class="topbar-right">
         <div class="status-pill" :class="statusClass">
           <span class="status-dot"></span>
@@ -16,11 +20,9 @@
       </div>
     </header>
 
-    <!-- ── Body ── -->
-    <div class="body">
-
-      <!-- ══ LEFT: controls ══ -->
-      <aside class="sidebar">
+    <!-- ── Config tab ── -->
+    <div v-show="tab==='config'" class="tab-content">
+      <div class="sidebar">
 
         <!-- Config mode -->
         <div class="section">
@@ -35,8 +37,6 @@
 
         <!-- NODE MODE -->
         <template v-if="configMode==='node'">
-
-          <!-- Nodes -->
           <div class="section">
             <div class="section-title-row">
               <span class="section-title">节点</span>
@@ -57,7 +57,6 @@
             </div>
           </div>
 
-          <!-- Route mode -->
           <div class="section">
             <div class="section-title">路由模式</div>
             <div class="route-grid">
@@ -70,7 +69,6 @@
               </button>
             </div>
           </div>
-
         </template>
 
         <!-- UPLOAD MODE -->
@@ -109,8 +107,8 @@
           </div>
         </div>
 
-        <!-- Toggles: LAN + IPv6 -->
-        <div class="section toggles-section">
+        <!-- Toggles -->
+        <div class="section">
           <div class="section-title">网络选项</div>
           <div class="toggle-group">
             <label class="toggle-row" :class="{disabled: isRunning}">
@@ -161,26 +159,27 @@
           </div>
         </div>
 
-      </aside>
+      </div>
+    </div>
 
-      <!-- ══ RIGHT: log ══ -->
-      <main class="logpane">
-        <div class="log-topbar">
-          <span class="log-title">LOGS</span>
-          <span class="log-live" :class="{live: isRunning}">
-            {{ isRunning ? '● LIVE' : '○ IDLE' }}
-          </span>
-          <button class="log-clear" @click="logs=[]">清空</button>
+    <!-- ── Logs tab ── -->
+    <div v-show="tab==='logs'" class="tab-content logpane">
+      <div class="log-inner">
+      <div class="log-topbar">
+        <span class="log-live" :class="{live: isRunning}">
+          {{ isRunning ? '● LIVE' : '○ IDLE' }}
+        </span>
+        <button class="log-clear" @click="logs=[]">清空</button>
+      </div>
+      <div class="log-body" ref="logEl" @scroll="onLogScroll">
+        <div v-if="logs.length===0" class="log-empty">等待核心启动…</div>
+        <div v-for="(line,i) in logs" :key="i" class="log-line">
+          <span class="log-arr">›</span>
+          <span class="log-txt" :class="logClass(line)">{{ line }}</span>
         </div>
-        <div class="log-body" ref="logEl" @scroll="onLogScroll">
-          <div v-if="logs.length===0" class="log-empty">等待核心启动…</div>
-          <div v-for="(line,i) in logs" :key="i" class="log-line">
-            <span class="log-arr">›</span>
-            <span class="log-txt" :class="logClass(line)">{{ line }}</span>
-          </div>
-        </div>
-        <div class="log-foot">{{ logs.length }} lines</div>
-      </main>
+      </div>
+      <div class="log-foot">{{ logs.length }} lines</div>
+      </div>
     </div>
 
     <!-- ── Import modal ── -->
@@ -209,9 +208,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 
-// ── state ──────────────────────────────────────────────────────────────────
+const tab            = ref('config')
 const configMode     = ref('node')
 const proxyMode      = ref('tproxy')
 const routeMode      = ref('whitelist')
@@ -234,7 +233,6 @@ const autoScroll   = ref(true)
 let sseSource = null
 let pollTimer = null
 
-// ── computed ───────────────────────────────────────────────────────────────
 const isRunning = computed(() => status.value.state === 'running')
 
 const startDisabled = computed(() => {
@@ -256,10 +254,10 @@ const statusLabel = computed(() =>
 const runtimeInfo = computed(() => {
   const s = status.value
   const r = {}
-  if (s.pid)       r['PID']    = s.pid
-  if (s.proxyMode) r['透明代理'] = s.proxyMode
-  if (s.routeMode) r['路由']   = s.routeMode
-  if (s.configMode)r['模式']   = s.configMode === 'node' ? '节点' : '上传'
+  if (s.pid)        r['PID']    = s.pid
+  if (s.proxyMode)  r['透明代理'] = s.proxyMode
+  if (s.routeMode)  r['路由']   = s.routeMode
+  if (s.configMode) r['模式']   = s.configMode === 'node' ? '节点' : '上传'
   r['局域网'] = s.lanProxy ? 'on' : 'off'
   r['IPv6']   = s.ipv6    ? 'on' : 'off'
   if (s.ports) {
@@ -271,7 +269,6 @@ const runtimeInfo = computed(() => {
   return r
 })
 
-// ── static data ────────────────────────────────────────────────────────────
 const proxyModes = [
   { value: 'tproxy',       icon: '⬡', label: 'tproxy',       desc: 'TCP + UDP' },
   { value: 'redirect',     icon: '⬢', label: 'redirect',     desc: 'TCP only' },
@@ -284,7 +281,6 @@ const routeModes = [
   { value: 'global',    icon: '●', label: '全局代理',   desc: '所有流量走代理' },
 ]
 
-// ── helpers ────────────────────────────────────────────────────────────────
 async function api(method, path, body) {
   const opts = { method, headers: {} }
   if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body) }
@@ -302,7 +298,6 @@ function logClass(line) {
   return ''
 }
 
-// ── nodes ──────────────────────────────────────────────────────────────────
 async function loadNodes() {
   try { nodes.value = await api('GET', '/nodes') } catch {}
 }
@@ -330,7 +325,6 @@ async function doImport() {
 
 function closeImport() { showImport.value = false; importErrors.value = [] }
 
-// ── upload ─────────────────────────────────────────────────────────────────
 async function uploadFile(file) {
   errorMsg.value = ''
   const fd = new FormData(); fd.append('config', file)
@@ -344,7 +338,6 @@ async function uploadFile(file) {
 function onFileChange(e) { if (e.target.files[0]) uploadFile(e.target.files[0]) }
 function onDrop(e) { isDragging.value = false; if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]) }
 
-// ── core control ───────────────────────────────────────────────────────────
 async function startCore() {
   errorMsg.value = ''
   try {
@@ -366,7 +359,6 @@ async function stopCore() {
   catch (e) { errorMsg.value = e.message }
 }
 
-// ── status ─────────────────────────────────────────────────────────────────
 async function pollStatus() {
   try {
     status.value = await api('GET', '/status')
@@ -374,7 +366,6 @@ async function pollStatus() {
   } catch {}
 }
 
-// ── SSE ────────────────────────────────────────────────────────────────────
 function startSSE() {
   if (sseSource) sseSource.close()
   sseSource = new EventSource('/api/logs')
@@ -393,7 +384,6 @@ function onLogScroll() {
   autoScroll.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 20
 }
 
-// ── lifecycle ──────────────────────────────────────────────────────────────
 onMounted(async () => {
   await Promise.all([loadNodes(), pollStatus()])
   try { uploadInfo.value = await api('GET', '/config/info') } catch {}
@@ -412,7 +402,6 @@ onUnmounted(() => { stopSSE(); clearInterval(pollTimer) })
 </script>
 
 <style>
-/* ── reset & tokens ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
@@ -446,7 +435,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── app shell ── */
 .app {
   display: flex;
   flex-direction: column;
@@ -459,21 +447,59 @@ body {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   height: 52px;
   padding: 0 20px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  gap: 0;
 }
-.brand { display: flex; align-items: center; gap: 8px; }
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 32px;
+}
 .brand-icon { color: var(--accent); font-size: 20px; line-height: 1; }
 .brand-name { font-size: 17px; font-weight: 700; letter-spacing: .03em; }
-.brand-sub  { font-family: var(--mono); font-size: 10px; color: var(--text3);
-  letter-spacing: .15em; text-transform: uppercase; margin-top: 1px; }
+.brand-sub  {
+  font-family: var(--mono); font-size: 10px; color: var(--text3);
+  letter-spacing: .15em; text-transform: uppercase; margin-top: 1px;
+}
+
+/* ── tab nav (centered in topbar) ── */
+.tab-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+}
+.tab-btn {
+  padding: 6px 20px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text3);
+  cursor: pointer;
+  transition: all .15s;
+  position: relative;
+}
+.tab-btn:hover { color: var(--text2); background: var(--bg); }
+.tab-btn.active {
+  color: var(--accent);
+  font-weight: 700;
+  background: var(--accent-bg);
+}
 
 /* status pill */
-.status-pill { display: flex; align-items: center; gap: 6px; padding: 4px 12px;
-  border-radius: 20px; font-size: 12px; font-weight: 600; border: 1.5px solid; }
+.topbar-right { margin-left: auto; }
+.status-pill {
+  display: flex; align-items: center; gap: 6px; padding: 4px 12px;
+  border-radius: 20px; font-size: 12px; font-weight: 600; border: 1.5px solid;
+}
 .status-dot  { width: 7px; height: 7px; border-radius: 50%; }
 .pill-stop   { color: var(--text3); border-color: var(--border2); }
 .pill-stop .status-dot { background: var(--text3); }
@@ -483,24 +509,25 @@ body {
 .pill-err .status-dot  { background: var(--red); }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-/* ── body layout ── */
-.body {
+/* ── tab content ── */
+.tab-content {
   flex: 1;
-  display: grid;
-  grid-template-columns: 420px 1fr;
   overflow: hidden;
-  gap: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-/* ── sidebar ── */
-.sidebar {
-  background: var(--surface);
-  border-right: 1px solid var(--border);
+/* ── config tab = sidebar ── */
+.tab-content .sidebar {
+  flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  max-width: 500px;
+  width: 100%;
+  margin: 0 auto;
 }
 .sidebar::-webkit-scrollbar { width: 4px; }
 .sidebar::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
@@ -516,8 +543,10 @@ body {
 }
 
 /* segmented control */
-.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 0;
-  border: 1.5px solid var(--border2); border-radius: var(--radius); overflow: hidden; }
+.seg {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+  border: 1.5px solid var(--border2); border-radius: var(--radius); overflow: hidden;
+}
 .seg-btn {
   padding: 9px; background: transparent; border: none; cursor: pointer;
   font-family: var(--sans); font-size: 13px; font-weight: 500; color: var(--text2);
@@ -563,12 +592,16 @@ body {
 .p-hysteria2 { background: #fff1f2; color: #e11d48; }
 
 .node-meta { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-.node-name { font-size: 13px; font-weight: 500;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node-name {
+  font-size: 13px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .node-addr { font-family: var(--mono); font-size: 10px; color: var(--text3); }
 
-.del-btn { background: none; border: none; color: var(--text3); cursor: pointer;
-  padding: 2px 5px; font-size: 12px; border-radius: 4px; transition: all .15s; }
+.del-btn {
+  background: none; border: none; color: var(--text3); cursor: pointer;
+  padding: 2px 5px; font-size: 12px; border-radius: 4px; transition: all .15s;
+}
 .del-btn:hover:not(:disabled) { color: var(--red); background: var(--red-bg); }
 .del-btn:disabled { opacity: .35; cursor: not-allowed; }
 
@@ -668,50 +701,64 @@ body {
   display: grid; grid-template-columns: auto 1fr; gap: 1px;
   background: var(--border); border-radius: var(--radius); overflow: hidden;
 }
-.info-k, .info-v {
-  padding: 6px 10px; background: var(--bg); font-size: 12px;
+.info-k, .info-v { padding: 6px 10px; background: var(--bg); font-size: 12px; }
+.info-k {
+  font-family: var(--mono); color: var(--text3); font-size: 11px;
+  text-transform: uppercase; letter-spacing: .05em;
 }
-.info-k { font-family: var(--mono); color: var(--text3); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 .info-v { font-family: var(--mono); color: var(--blue); font-weight: 600; }
 
 /* ── log pane ── */
-.logpane {
-  display: flex; flex-direction: column;
-  background: #1a1d23; overflow: hidden;
+.logpane { background: var(--bg); }
+.log-inner {
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
 }
 .log-topbar {
   display: flex; align-items: center; gap: 10px;
-  padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,.08);
-  flex-shrink: 0;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0; background: var(--surface);
 }
-.log-title { font-family: var(--mono); font-size: 11px; font-weight: 700;
-  letter-spacing: .15em; color: rgba(255,255,255,.35); }
-.log-live { font-family: var(--mono); font-size: 10px; color: rgba(255,255,255,.3);
-  letter-spacing: .1em; margin-right: auto; }
-.log-live.live { color: #00b37a; animation: blink 1.4s infinite; }
-.log-clear { background: none; border: 1px solid rgba(255,255,255,.12); color: rgba(255,255,255,.35);
+.log-live {
+  font-family: var(--mono); font-size: 10px; color: var(--text3);
+  letter-spacing: .1em; margin-right: auto;
+}
+.log-live.live { color: var(--accent); animation: blink 1.4s infinite; }
+.log-clear {
+  background: none; border: 1px solid var(--border2); color: var(--text3);
   padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 11px;
-  font-family: var(--mono); transition: all .15s; }
-.log-clear:hover { border-color: rgba(255,255,255,.3); color: rgba(255,255,255,.7); }
+  font-family: var(--mono); transition: all .15s;
+}
+.log-clear:hover { border-color: var(--border2); color: var(--text); }
 
 .log-body {
   flex: 1; overflow-y: auto; padding: 12px 16px;
   font-family: var(--mono); font-size: 12px; line-height: 1.9;
+  background: var(--surface);
 }
 .log-body::-webkit-scrollbar { width: 4px; }
-.log-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 2px; }
-.log-empty { color: rgba(255,255,255,.2); text-align: center; padding: 60px 0; }
+.log-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.log-empty { color: var(--text3); text-align: center; padding: 60px 0; }
 .log-line  { display: flex; gap: 8px; }
-.log-arr   { color: rgba(255,255,255,.2); user-select: none; flex-shrink: 0; }
-.log-txt   { color: rgba(255,255,255,.55); word-break: break-all; }
-.l-err  { color: #fc8181 !important; }
-.l-warn { color: #f6ad55 !important; }
-.l-info { color: rgba(255,255,255,.85) !important; }
+.log-arr   { color: var(--text3); user-select: none; flex-shrink: 0; }
+.log-txt   { color: var(--text2); word-break: break-all; }
+.l-err  { color: var(--red) !important; }
+.l-warn { color: var(--warn) !important; }
+.l-info { color: var(--text) !important; }
 
 .log-foot {
   flex-shrink: 0; padding: 6px 16px;
-  border-top: 1px solid rgba(255,255,255,.06);
-  font-family: var(--mono); font-size: 10px; color: rgba(255,255,255,.2);
+  border-top: 1px solid var(--border);
+  font-family: var(--mono); font-size: 10px; color: var(--text3);
+  background: var(--surface);
 }
 
 /* ── modal ── */
@@ -728,8 +775,10 @@ body {
   padding: 16px 20px; border-bottom: 1px solid var(--border);
   font-size: 15px; font-weight: 700;
 }
-.modal-x { background: none; border: none; color: var(--text3); cursor: pointer;
-  font-size: 16px; padding: 2px 6px; border-radius: 4px; transition: all .15s; }
+.modal-x {
+  background: none; border: none; color: var(--text3); cursor: pointer;
+  font-size: 16px; padding: 2px 6px; border-radius: 4px; transition: all .15s;
+}
 .modal-x:hover { background: var(--bg); color: var(--text); }
 .modal-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
 .modal-hint { font-size: 12px; color: var(--text3); }
@@ -762,10 +811,7 @@ body {
 
 /* ── mobile ── */
 @media (max-width: 768px) {
-  .body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .sidebar { max-height: 65vh; border-right: none; border-bottom: 1px solid var(--border); }
-  .logpane { min-height: 35vh; }
-  .log-body { font-size: 11px; }
   .brand-sub { display: none; }
+  .tab-content .sidebar { padding: 16px; }
 }
 </style>
