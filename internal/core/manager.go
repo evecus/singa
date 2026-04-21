@@ -25,8 +25,8 @@ import (
 
 const singboxBin = "/usr/bin/sing-box"
 
-// singboxGroup is the dedicated system group used to identify sing-box traffic.
-const singboxGroup = "singbox"
+// singaGroup is the dedicated system group used to identify sing-box traffic.
+const singaGroup = "singa"
 
 // IsReF1ndBuild returns true when the installed sing-box binary was built
 // with the reF1nd fork (identified by "reF1nd" in the version string).
@@ -131,32 +131,89 @@ func (m *Manager) DeleteNode(id string) bool {
 
 // ── group helpers ──────────────────────────────────────────────────────────
 
-// ensureSingboxGroup looks up the singbox system group, creating it if it
+// ensureSingaGroup looks up the singa system group, creating it if it
 // does not exist. Returns the numeric GID.
-func ensureSingboxGroup() (uint32, error) {
-	g, err := user.LookupGroup(singboxGroup)
-	if err == nil {
+// Compatible with standard Linux (groupadd) and OpenWrt (writes /etc/group directly).
+func ensureSingaGroup() (uint32, error) {
+	// Fast path: group already exists.
+	if g, err := user.LookupGroup(singaGroup); err == nil {
 		gid, err := strconv.ParseUint(g.Gid, 10, 32)
 		if err != nil {
 			return 0, fmt.Errorf("parse gid %q: %w", g.Gid, err)
 		}
 		return uint32(gid), nil
 	}
-	// Group does not exist — create it.
-	log.Printf("group %q not found, creating system group", singboxGroup)
-	out, err := exec.Command("groupadd", "--system", singboxGroup).CombinedOutput()
-	if err != nil {
-		return 0, fmt.Errorf("groupadd %s: %w (output: %s)", singboxGroup, err, strings.TrimSpace(string(out)))
+
+	log.Printf("group %q not found, creating", singaGroup)
+
+	// Try groupadd (standard Linux / Debian).
+	if path, err := exec.LookPath("groupadd"); err == nil {
+		out, err := exec.Command(path, "--system", singaGroup).CombinedOutput()
+		if err != nil {
+			return 0, fmt.Errorf("groupadd: %w (output: %s)", err, strings.TrimSpace(string(out)))
+		}
+		// Re-lookup after groupadd.
+		g, err := user.LookupGroup(singaGroup)
+		if err != nil {
+			return 0, fmt.Errorf("lookup group after create: %w", err)
+		}
+		gid, err := strconv.ParseUint(g.Gid, 10, 32)
+		if err != nil {
+			return 0, fmt.Errorf("parse gid %q: %w", g.Gid, err)
+		}
+		return uint32(gid), nil
 	}
-	g, err = user.LookupGroup(singboxGroup)
+
+	// Fallback: write /etc/group directly (OpenWrt / busybox systems).
+	return writeGroupEntry(singaGroup)
+}
+
+// writeGroupEntry picks a free GID (starting from 500, skipping existing ones),
+// appends "name:x:GID:" to /etc/group, and returns the chosen GID.
+func writeGroupEntry(name string) (uint32, error) {
+	const groupFile = "/etc/group"
+
+	data, err := os.ReadFile(groupFile)
 	if err != nil {
-		return 0, fmt.Errorf("lookup group after create: %w", err)
+		return 0, fmt.Errorf("read %s: %w", groupFile, err)
 	}
-	gid, err := strconv.ParseUint(g.Gid, 10, 32)
+
+	// Collect all existing GIDs.
+	usedGIDs := make(map[uint32]bool)
+	for _, line := range strings.Split(string(data), "\n") {
+		parts := strings.Split(line, ":")
+		if len(parts) < 3 {
+			continue
+		}
+		if gid, err := strconv.ParseUint(parts[2], 10, 32); err == nil {
+			usedGIDs[uint32(gid)] = true
+		}
+	}
+
+	// Pick first free GID starting from 500.
+	var chosen uint32
+	for candidate := uint32(500); candidate < 65000; candidate++ {
+		if !usedGIDs[candidate] {
+			chosen = candidate
+			break
+		}
+	}
+	if chosen == 0 {
+		return 0, fmt.Errorf("no free GID available")
+	}
+
+	entry := fmt.Sprintf("%s:x:%d:\n", name, chosen)
+	f, err := os.OpenFile(groupFile, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return 0, fmt.Errorf("parse gid %q: %w", g.Gid, err)
+		return 0, fmt.Errorf("open %s: %w", groupFile, err)
 	}
-	return uint32(gid), nil
+	defer f.Close()
+	if _, err := f.WriteString(entry); err != nil {
+		return 0, fmt.Errorf("write %s: %w", groupFile, err)
+	}
+
+	log.Printf("created group %q with GID %d in %s", name, chosen, groupFile)
+	return chosen, nil
 }
 
 // ── Start / Stop ───────────────────────────────────────────────────────────
@@ -202,12 +259,11 @@ func (m *Manager) Start(p StartParams) error {
 		return fmt.Errorf("unknown config mode %q", p.ConfigMode)
 	}
 
-	// Ensure the dedicated singbox group exists (creates it if needed).
-	// nftables rules use skgid to skip sing-box's own outbound traffic,
-	// preventing routing loops for both node mode and upload mode configs.
-	gid, err := ensureSingboxGroup()
+	// Ensure the dedicated singa group exists (creates it if needed).
+	// nftables skgid rules use this GID to bypass sing-box's own traffic.
+	gid, err := ensureSingaGroup()
 	if err != nil {
-		return fmt.Errorf("singbox group: %w", err)
+		return fmt.Errorf("singa group: %w", err)
 	}
 
 	fwPort := ports.TProxy
@@ -220,7 +276,7 @@ func (m *Manager) Start(p StartParams) error {
 
 	cmd := exec.Command(singboxBin, "run", "-D", m.runDir)
 	cmd.Dir = m.runDir
-	// Run sing-box with the singbox supplementary group so nftables skgid
+	// Run sing-box with the singa supplementary group so nftables skgid
 	// rules can identify and bypass its own outbound traffic.
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
