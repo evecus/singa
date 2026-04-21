@@ -256,7 +256,7 @@ func buildRedirectTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
         jump tp_rule
     }
 }
-`, nfproto, gid, port, gid, dnsPort, dnsPort, dnsRedirectV6)
+`, gid, nfproto, port, gid, dnsPort, dnsPort, dnsRedirectV6)
 }
 
 // ── Cleanup ────────────────────────────────────────────────────────────────
