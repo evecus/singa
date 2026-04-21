@@ -16,10 +16,10 @@ type Ports struct {
 // DefaultPorts returns preferred fixed ports, falling back to any free port if occupied.
 func DefaultPorts() Ports {
 	return Ports{
-		DNS:      preferPort(5354),
-		Mixed:    preferPort(3080),
-		Redirect: preferPort(3081),
-		TProxy:   preferPort(3082),
+		DNS:      preferPort(2053),
+		Mixed:    preferPort(2081),
+		Redirect: preferPort(2082),
+		TProxy:   preferPort(2083),
 	}
 }
 
