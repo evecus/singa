@@ -2,6 +2,8 @@ package main
 
 import (
 	"embed"
+	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -20,14 +22,36 @@ var webFS embed.FS
 var srsFS embed.FS
 
 func main() {
+	var (
+		dirFlag  string
+		portFlag int
+	)
+	flag.StringVar(&dirFlag, "dir", "", "data directory (default: <exe-dir>/data)")
+	flag.IntVar(&portFlag, "port", 0, "web UI port (default: 8080)")
+	flag.Parse()
+
 	exe, err := os.Executable()
 	if err != nil {
 		log.Fatalf("executable path: %v", err)
 	}
 	baseDir := filepath.Dir(exe)
+
 	dataDir := filepath.Join(baseDir, "data")
-	runDir  := filepath.Join(dataDir, "run")
-	srsDir  := filepath.Join(dataDir, "srs")
+	if dirFlag != "" {
+		abs, err := filepath.Abs(dirFlag)
+		if err != nil {
+			log.Fatalf("invalid --dir: %v", err)
+		}
+		dataDir = abs
+	}
+
+	listen := ":8080"
+	if portFlag != 0 {
+		listen = fmt.Sprintf(":%d", portFlag)
+	}
+
+	runDir := filepath.Join(dataDir, "run")
+	srsDir := filepath.Join(dataDir, "srs")
 
 	for _, d := range []string{dataDir, runDir, srsDir} {
 		if err := os.MkdirAll(d, 0755); err != nil {
@@ -53,8 +77,8 @@ func main() {
 	}()
 
 	srv := api.NewServer(manager, dataDir, webFS)
-	log.Printf("singa: listening on :8080  data=%s", dataDir)
-	if err := srv.Run(":8080"); err != nil {
+	log.Printf("singa: listening on %s  data=%s", listen, dataDir)
+	if err := srv.Run(listen); err != nil {
 		log.Fatalf("server: %v", err)
 	}
 }
