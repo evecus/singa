@@ -22,13 +22,14 @@ jobs:
       - name: Download srs rule sets
         run: |
           mkdir -p assets/srs
+          curl -fsSL https://raw.githubusercontent.com/1715173329/IPCIDR-CHINA/refs/heads/rule-set/cn.srs -o assets/srs/geoip-cn.srs
           BASE_SITE="https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/sing/geo/geosite"
           BASE_IP="https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/sing/geo/geoip"
           for name in cn private gfw "geolocation-!cn"; do
             curl -fsSL "${BASE_SITE}/${name}.srs" -o "assets/srs/geosite-${name}.srs"
             echo "Downloaded ${name}.srs ($(wc -c < "assets/srs/geosite-${name}.srs") bytes)"
           done
-          for name in cn private; do
+          for name in private google facebook telegram twitter netflix; do
             curl -fsSL "${BASE_IP}/${name}.srs" -o "assets/srs/geoip-${name}.srs"
             echo "Downloaded ${name}.srs ($(wc -c < "assets/srs/geoip-${name}.srs") bytes)"
           done
