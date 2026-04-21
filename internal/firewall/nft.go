@@ -51,22 +51,38 @@ func setupTproxy(port int, dnsPort int, lanProxy bool, ipv6 bool) error {
 }
 
 func buildTproxyTable(port int, dnsPort int, ipv6 bool) string {
-	nfproto := "meta nfproto { ipv4, ipv6 }"
-	if !ipv6 {
-		nfproto = "meta nfproto ipv4"
+	// FIX: tp_pre chain uses separate ipv4/ipv6 nfproto matchers so that
+	// tproxy statements can specify the correct address family without conflict.
+	// Previously a single "meta nfproto { ipv4, ipv6 }" was used with
+	// "tproxy ip to 127.0.0.1:port", which nftables rejects as conflicting
+	// protocols (ip6 vs. ip).
+	nfprotoOut := "meta nfproto ipv4"
+	if ipv6 {
+		nfprotoOut = "meta nfproto { ipv4, ipv6 }"
 	}
 
-	tproxyV6 := ""
+	// tproxy lines for tp_pre: must use per-family nfproto to avoid conflict
+	tproxyLines := fmt.Sprintf(
+		"        meta nfproto ipv4 meta l4proto { tcp, udp } mark & 0xc0 == 0x40 tproxy ip to 127.0.0.1:%d\n",
+		port,
+	)
 	if ipv6 {
-		tproxyV6 = fmt.Sprintf(
-			"        %s meta l4proto { tcp, udp } mark & 0xc0 == 0x40 tproxy ip6 to [::1]:%d\n",
-			nfproto, port,
+		tproxyLines += fmt.Sprintf(
+			"        meta nfproto ipv6 meta l4proto { tcp, udp } mark & 0xc0 == 0x40 tproxy ip6 to [::1]:%d\n",
+			port,
 		)
 	}
 
-	// DNS redirect chain: redirect port-53 traffic to sing-box dns-in.
-	// Must be in a nat table (separate from the mangle tproxy table).
-	// Skips packets already marked as sing-box own traffic (0x80).
+	// tp_pre forward match: for LAN traffic use per-family matchers as well
+	tpPreFwdV4 := fmt.Sprintf(
+		"meta nfproto ipv4 meta l4proto { tcp, udp } fib saddr type != local fib daddr type != local jump tp_rule",
+	)
+	tpPreFwdV6 := ""
+	if ipv6 {
+		tpPreFwdV6 = "\n        meta nfproto ipv6 meta l4proto { tcp, udp } fib saddr type != local fib daddr type != local jump tp_rule"
+	}
+
+	// DNS redirect lines for the nat table
 	dnsRedirectV6 := ""
 	if ipv6 {
 		dnsRedirectV6 = fmt.Sprintf(
@@ -108,8 +124,7 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool) string {
 
     chain tp_pre {
         iifname "lo" mark & 0xc0 != 0x40 return
-        %s meta l4proto { tcp, udp } fib saddr type != local fib daddr type != local jump tp_rule
-        %s meta l4proto { tcp, udp } mark & 0xc0 == 0x40 tproxy ip to 127.0.0.1:%d
+        %s%s
 %s    }
 
     chain tp_out {
@@ -148,7 +163,7 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool) string {
         jump dns_redirect
     }
 }
-`, nfproto, nfproto, port, tproxyV6, dnsPort, dnsPort, dnsRedirectV6)
+`, tpPreFwdV4, tpPreFwdV6, tproxyLines, nfprotoOut, dnsPort, dnsPort, dnsRedirectV6)
 }
 
 // ── redirect ───────────────────────────────────────────────────────────────
