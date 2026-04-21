@@ -432,14 +432,14 @@ function onLogScroll() {
 onMounted(async () => {
   await Promise.all([loadNodes(), pollStatus()])
   try { uploadInfo.value = await api('GET', '/config/info') } catch {}
-  if (isRunning.value) {
-    configMode.value = status.value.configMode || 'node'
-    proxyMode.value  = status.value.proxyMode  || 'tproxy'
-    routeMode.value  = status.value.routeMode  || 'whitelist'
-    lanProxy.value   = status.value.lanProxy   || false
-    ipv6.value       = status.value.ipv6       || false
-    startSSE()
-  }
+  configMode.value     = status.value.configMode  || 'node'
+  proxyMode.value      = status.value.proxyMode   || 'tproxy'
+  routeMode.value      = status.value.routeMode   || 'whitelist'
+  lanProxy.value       = status.value.lanProxy    || false
+  ipv6.value           = status.value.ipv6        || false
+  blockAds.value       = status.value.blockAds    || false
+  if (status.value.nodeId) selectedNodeId.value = status.value.nodeId
+  if (isRunning.value) startSSE()
   pollTimer = setInterval(pollStatus, 10000)
   if (logEl.value) logEl.value.addEventListener('scroll', onLogScroll)
 })
