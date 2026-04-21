@@ -40,8 +40,14 @@
           <div class="section">
             <div class="section-title-row">
               <span class="section-title">节点</span>
-              <button class="icon-btn" @click="showImport=true">＋ 导入</button>
+              <div class="title-actions">
+                <button class="icon-btn secondary" :class="{loading: updatingRules}" :disabled="updatingRules" @click="updateRules">
+                  {{ updatingRules ? '更新中…' : '↻ 更新规则集' }}
+                </button>
+                <button class="icon-btn" @click="showImport=true">＋ 导入</button>
+              </div>
             </div>
+            <div v-if="updateRulesMsg" class="update-msg" :class="updateRulesMsgClass">{{ updateRulesMsg }}</div>
             <div v-if="nodes.length===0" class="empty-tip">暂无节点，点击「导入」添加</div>
             <div v-else class="node-list">
               <div v-for="n in nodes" :key="n.id"
@@ -227,6 +233,33 @@ const routeMode      = ref('whitelist')
 const lanProxy       = ref(false)
 const ipv6           = ref(false)
 const blockAds       = ref(false)
+
+const updatingRules    = ref(false)
+const updateRulesMsg   = ref('')
+const updateRulesMsgClass = ref('')
+
+async function updateRules() {
+  updatingRules.value  = true
+  updateRulesMsg.value = ''
+  try {
+    const res = await api('POST', '/update-rules')
+    if (res.failed === 0) {
+      updateRulesMsg.value = `✓ 全部 ${res.total} 个规则集更新成功`
+      updateRulesMsgClass.value = 'msg-ok'
+    } else if (res.failed < res.total) {
+      updateRulesMsg.value = `⚠ ${res.total - res.failed}/${res.total} 成功，${res.failed} 个失败`
+      updateRulesMsgClass.value = 'msg-warn'
+    } else {
+      updateRulesMsg.value = `✕ 全部更新失败，请检查网络`
+      updateRulesMsgClass.value = 'msg-err'
+    }
+  } catch (e) {
+    updateRulesMsg.value = `✕ ${e.message}`
+    updateRulesMsgClass.value = 'msg-err'
+  } finally {
+    updatingRules.value = false
+  }
+}
 const selectedNodeId = ref('')
 
 const nodes        = ref([])
@@ -553,6 +586,7 @@ body {
 .section-title-row {
   display: flex; justify-content: space-between; align-items: center;
 }
+.title-actions { display: flex; gap: 6px; align-items: center; }
 
 /* segmented control */
 .seg {
@@ -576,7 +610,22 @@ body {
   border: none; border-radius: 6px; font-size: 12px; font-weight: 600;
   cursor: pointer; transition: background .15s;
 }
-.icon-btn:hover { background: var(--accent-h); }
+.icon-btn:hover:not(:disabled) { background: var(--accent-h); }
+.icon-btn:disabled { opacity: .5; cursor: not-allowed; }
+.icon-btn.secondary {
+  background: none; border: 1px solid var(--border2); color: var(--text3);
+  font-weight: 500;
+}
+.icon-btn.secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.icon-btn.loading { background: none; border: 1px solid var(--accent); color: var(--accent); font-weight: 500; }
+
+.update-msg {
+  font-size: 11px; padding: 5px 8px; border-radius: 4px;
+  font-family: var(--mono); line-height: 1.4; margin-top: 2px;
+}
+.msg-ok   { background: var(--accent-bg); color: var(--accent); }
+.msg-warn { background: #fffbeb; color: var(--warn); }
+.msg-err  { background: var(--red-bg); color: var(--red); }
 
 .empty-tip { font-size: 12px; color: var(--text3); text-align: center; padding: 14px 0; }
 
