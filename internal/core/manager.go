@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"path/filepath"
 	"sync"
 	"time"
@@ -19,6 +20,16 @@ import (
 )
 
 const singboxBin = "/usr/bin/sing-box"
+
+// IsReF1ndBuild returns true when the installed sing-box binary was built
+// with the reF1nd fork (identified by "reF1nd" in the version string).
+func IsReF1ndBuild() bool {
+	out, err := exec.Command(singboxBin, "version").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "reF1nd")
+}
 
 type State string
 
@@ -224,7 +235,7 @@ func (m *Manager) prepareUploadConfig() error {
 }
 
 func (m *Manager) prepareNodeConfig(p StartParams, n *node.Node, ports builder.Ports) error {
-	data, err := builder.BuildConfig(p.ProxyMode, p.RouteMode, n, ports, p.LanProxy, p.IPv6, m.srsDir)
+	data, err := builder.BuildConfig(p.ProxyMode, p.RouteMode, n, ports, p.LanProxy, p.IPv6, m.srsDir, IsReF1ndBuild())
 	if err != nil {
 		return fmt.Errorf("build config: %w", err)
 	}
