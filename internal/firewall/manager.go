@@ -16,8 +16,8 @@ var (
 // Apply sets up nftables rules for the chosen proxy mode.
 // port is the transparent proxy inbound port (tproxy/redirect).
 // dnsPort is the sing-box dns-in port to redirect DNS traffic into.
-// gid is the numeric GID of the singbox group; traffic from processes running
-// with this supplementary group is exempted from interception to prevent routing loops.
+// gid is the kernel cgroup v2 id for the sing-box process; traffic from
+// this cgroup is exempted from interception to prevent routing loops.
 func Apply(mode config.ProxyMode, port int, dnsPort int, lanProxy bool, ipv6 bool, dataDir string, gid uint32) error {
 	mu.Lock()
 	defer mu.Unlock()
