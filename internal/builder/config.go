@@ -76,7 +76,7 @@ func buildInbounds(mode config.ProxyMode, ports Ports, listen string) []interfac
 			"tag":         "dns-in",
 			"type":        "direct",
 			"listen":      listen,
-			"listen_port": 1053,
+			"listen_port": ports.DNS,
 		},
 		// Mixed (SOCKS5+HTTP) inbound for local proxy usage
 		M{
