@@ -31,6 +31,8 @@ func BuildConfig(
 	if err != nil {
 		return nil, fmt.Errorf("outbound: %w", err)
 	}
+	// Mark proxy/direct outbound traffic so tproxy/tun rules skip it (prevents routing loops)
+	proxyOB["routing_mark"] = 128
 
 	listenAddr := "127.0.0.1"
 	if lanProxy {
@@ -46,7 +48,7 @@ func BuildConfig(
 		"inbounds": buildInbounds(proxyMode, ports, listenAddr),
 		"outbounds": []interface{}{
 			proxyOB,
-			M{"type": "direct", "tag": "direct"},
+			M{"type": "direct", "tag": "direct", "routing_mark": 128},
 			M{"type": "block", "tag": "block"},
 		},
 		"route": buildRoute(routeMode, srsDir, isReF1nd),
@@ -109,7 +111,7 @@ func buildInbounds(mode config.ProxyMode, ports Ports, listen string) []interfac
 			"type":           "tun",
 			"interface_name": "singa",
 			"address":        []string{"172.31.0.1/30", "fdfe:dcba:9876::1/126"},
-			"auto_route":     false,
+			"auto_route":     true,
 			"auto_redirect":  false,
 		})
 		// system_proxy: mixed-in only, no transparent inbound needed
