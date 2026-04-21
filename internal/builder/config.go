@@ -26,6 +26,7 @@ func BuildConfig(
 	ipv6 bool,
 	srsDir string,
 	isReF1nd bool,
+	blockAds bool,
 ) ([]byte, error) {
 	proxyOB, err := NodeToOutbound(n, "proxy")
 	if err != nil {
@@ -49,7 +50,7 @@ func BuildConfig(
 			M{"type": "direct", "tag": "direct"},
 			M{"type": "block", "tag": "block"},
 		},
-		"route": buildRoute(routeMode, srsDir, isReF1nd),
+		"route": buildRoute(routeMode, srsDir, isReF1nd, blockAds),
 		"experimental": M{
 			"cache_file": M{
 				"enabled": true,
@@ -185,7 +186,7 @@ func buildDNS(routeMode RouteMode, ipv6 bool) M {
 
 // ── Route ──────────────────────────────────────────────────────────────────
 
-func buildRoute(routeMode RouteMode, srsDir string, isReF1nd bool) M {
+func buildRoute(routeMode RouteMode, srsDir string, isReF1nd bool, blockAds bool) M {
 	// default_domain_resolver is required since sing-box 1.12.0.
 	// It tells the router which DNS server to use when resolving domains
 	// in route rules. We pick the appropriate resolver based on route mode:
@@ -197,8 +198,8 @@ func buildRoute(routeMode RouteMode, srsDir string, isReF1nd bool) M {
 	}
 
 	return M{
-		"rules":                   buildRouteRules(routeMode, isReF1nd),
-		"rule_set":                buildRuleSets(routeMode, srsDir),
+		"rules":                   buildRouteRules(routeMode, isReF1nd, blockAds),
+		"rule_set":                buildRuleSets(routeMode, srsDir, blockAds),
 		"final":                   routeFinal(routeMode),
 		"auto_detect_interface":   true,
 		"default_domain_resolver": defaultResolver,
@@ -212,7 +213,7 @@ func routeFinal(mode RouteMode) string {
 	return "proxy"
 }
 
-func buildRouteRules(routeMode RouteMode, isReF1nd bool) []interface{} {
+func buildRouteRules(routeMode RouteMode, isReF1nd bool, blockAds bool) []interface{} {
 	rules := []interface{}{
 		// Sniff protocol/domain on all connections (replaces deprecated inbound.sniff)
 		M{"action": "sniff", "timeout": "500ms"},
@@ -234,6 +235,12 @@ func buildRouteRules(routeMode RouteMode, isReF1nd bool) []interface{} {
 	rules = append(rules,
 		M{"rule_set": []string{"geosite-private", "geoip-private"}, "outbound": "direct"},
 	)
+
+	// Ad blocking: inserted before per-mode rules so ads are rejected regardless
+	// of route mode. Only added when blockAds is enabled.
+	if blockAds {
+		rules = append(rules, M{"action": "reject", "rule_set": []string{"ads"}})
+	}
 
 	switch routeMode {
 	case RouteModeWhitelist:
@@ -273,7 +280,7 @@ func buildRouteRules(routeMode RouteMode, isReF1nd bool) []interface{} {
 	return rules
 }
 
-func buildRuleSets(routeMode RouteMode, srsDir string) []interface{} {
+func buildRuleSets(routeMode RouteMode, srsDir string, blockAds bool) []interface{} {
 	tags := []string{"geosite-private", "geoip-private"}
 
 	switch routeMode {
@@ -284,7 +291,7 @@ func buildRuleSets(routeMode RouteMode, srsDir string) []interface{} {
 			"geoip-google", "geoip-facebook", "geoip-telegram", "geoip-twitter", "geoip-netflix")
 	}
 
-	out := make([]interface{}, 0, len(tags))
+	out := make([]interface{}, 0, len(tags)+1)
 	for _, tag := range tags {
 		out = append(out, M{
 			"type":   "local",
@@ -293,6 +300,16 @@ func buildRuleSets(routeMode RouteMode, srsDir string) []interface{} {
 			"path":   srsDir + "/" + tag + ".srs",
 		})
 	}
+
+	if blockAds {
+		out = append(out, M{
+			"type":   "local",
+			"tag":    "ads",
+			"format": "binary",
+			"path":   srsDir + "/ads.srs",
+		})
+	}
+
 	return out
 }
 
