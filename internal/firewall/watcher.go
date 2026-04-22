@@ -6,13 +6,12 @@ import (
 	"net"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // LocalIPWatcher watches for network address changes via Linux netlink
 // (RTNLGRP_IPV4_IFADDR | RTNLGRP_IPV6_IFADDR) and syncs the current set
 // of local CIDRs into nftables on every change.
-//
-// No polling — the kernel notifies us on RTM_NEWADDR / RTM_DELADDR.
 type LocalIPWatcher struct {
 	mu          sync.Mutex
 	pool        map[string]struct{}
@@ -23,8 +22,6 @@ type LocalIPWatcher struct {
 	wg          sync.WaitGroup
 }
 
-// NewLocalIPWatcher opens a netlink socket, does an initial sync, then
-// starts a goroutine that wakes on every address-change event.
 func NewLocalIPWatcher(added, removed func(cidr string)) *LocalIPWatcher {
 	w := &LocalIPWatcher{
 		pool:        make(map[string]struct{}),
@@ -41,7 +38,6 @@ func NewLocalIPWatcher(added, removed func(cidr string)) *LocalIPWatcher {
 		return w
 	}
 	w.fd = fd
-
 	w.sync()
 
 	w.wg.Add(1)
@@ -50,18 +46,31 @@ func NewLocalIPWatcher(added, removed func(cidr string)) *LocalIPWatcher {
 }
 
 func (w *LocalIPWatcher) Close() {
+	// Signal done first, then close the fd to unblock Read().
 	close(w.done)
 	if w.fd >= 0 {
 		syscall.Close(w.fd)
+		w.fd = -1
 	}
-	w.wg.Wait()
+	// Wait with timeout so a stuck goroutine doesn't block Stop() forever.
+	waitDone := make(chan struct{})
+	go func() { w.wg.Wait(); close(waitDone) }()
+	select {
+	case <-waitDone:
+	case <-time.After(2 * time.Second):
+		log.Printf("firewall: watcher goroutine did not exit in time, continuing")
+	}
 }
 
-// netlinkLoop reads netlink messages and re-syncs on every address event.
 func (w *LocalIPWatcher) netlinkLoop() {
 	defer w.wg.Done()
 	buf := make([]byte, 4096)
 	for {
+		select {
+		case <-w.done:
+			return
+		default:
+		}
 		n, err := syscall.Read(w.fd, buf)
 		if err != nil {
 			select {
@@ -77,7 +86,6 @@ func (w *LocalIPWatcher) netlinkLoop() {
 	}
 }
 
-// isAddrEvent returns true if the buffer contains RTM_NEWADDR or RTM_DELADDR.
 func isAddrEvent(buf []byte) bool {
 	for len(buf) >= syscall.NLMSG_HDRLEN {
 		msgLen := binary.LittleEndian.Uint32(buf[0:4])
@@ -97,8 +105,6 @@ func isAddrEvent(buf []byte) bool {
 	return false
 }
 
-// openNetlink creates a NETLINK_ROUTE socket subscribed to IPv4 and IPv6
-// address-change multicast groups.
 func openNetlink() (int, error) {
 	fd, err := syscall.Socket(
 		syscall.AF_NETLINK,
@@ -119,8 +125,6 @@ func openNetlink() (int, error) {
 	return fd, nil
 }
 
-// sync diffs current interface CIDRs against the known pool and calls
-// AddedFunc / RemovedFunc for each change.
 func (w *LocalIPWatcher) sync() {
 	cidrs, err := localCIDRs()
 	if err != nil {
@@ -145,14 +149,12 @@ func (w *LocalIPWatcher) sync() {
 	w.pool = current
 }
 
-// startFallback is used when netlink is unavailable (e.g. unprivileged containers).
 func (w *LocalIPWatcher) startFallback() {
 	w.sync()
 	w.wg.Add(1)
 	go func() {
 		defer w.wg.Done()
 		for {
-			// sleep 30s interruptible by done
 			ts := syscall.Timespec{Sec: 30}
 			syscall.Nanosleep(&ts, nil)
 			select {
@@ -165,7 +167,6 @@ func (w *LocalIPWatcher) startFallback() {
 	}()
 }
 
-// localCIDRs returns all CIDRs currently assigned to local interfaces.
 func localCIDRs() ([]string, error) {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
