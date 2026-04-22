@@ -25,9 +25,8 @@ var srsFiles = map[string]string{
 	"ads.srs":                     "https://raw.githubusercontent.com/privacy-protection-tools/anti-ad.github.io/master/docs/anti-ad-sing-box.srs",
 }
 
-// mirrors are tried in order after a direct download fails.
-// Each mirror is a URL prefix prepended to the raw GitHub URL.
-var mirrors = []string{
+// BuiltinMirrors are tried in order after a direct download fails.
+var BuiltinMirrors = []string{
 	"https://ghfast.top/",
 	"https://gh-proxy.com/",
 	"https://gh.ddlc.top/",
@@ -37,17 +36,17 @@ var mirrors = []string{
 // Result reports the outcome of a single file update.
 type Result struct {
 	File   string `json:"file"`
-	Mirror string `json:"mirror"` // "direct" or the mirror prefix used
+	Mirror string `json:"mirror"`
 	Error  string `json:"error,omitempty"`
 }
 
 // UpdateAll downloads all rule set files into srsDir.
-// Each file is tried directly first; on failure the mirrors are tried in order.
-// Files are written atomically (temp file → rename).
-func UpdateAll(srsDir string) []Result {
+// proxy is an optional custom GitHub proxy prefix (e.g. "https://mymirror.com/").
+// If empty, only direct + builtin mirrors are tried.
+func UpdateAll(srsDir string, proxy string) []Result {
 	results := make([]Result, 0, len(srsFiles))
 	for filename, rawURL := range srsFiles {
-		mirror, err := downloadFile(srsDir, filename, rawURL)
+		mirror, err := downloadFile(srsDir, filename, rawURL, proxy)
 		r := Result{File: filename, Mirror: mirror}
 		if err != nil {
 			r.Error = err.Error()
@@ -57,20 +56,23 @@ func UpdateAll(srsDir string) []Result {
 	return results
 }
 
-// downloadFile tries direct then each mirror until one succeeds.
-// Returns the mirror label used ("direct" or prefix) and any final error.
-func downloadFile(srsDir, filename, rawURL string) (string, error) {
-	candidates := []struct {
+func downloadFile(srsDir, filename, rawURL, customProxy string) (string, error) {
+	type candidate struct {
 		label string
 		url   string
-	}{
-		{"direct", rawURL},
 	}
-	for _, m := range mirrors {
-		candidates = append(candidates, struct {
-			label string
-			url   string
-		}{m, m + rawURL})
+	candidates := []candidate{{"direct", rawURL}}
+
+	// Custom proxy first (user-specified takes priority over builtins)
+	if customProxy != "" {
+		p := customProxy
+		if p[len(p)-1] != '/' {
+			p += "/"
+		}
+		candidates = append(candidates, candidate{p, p + rawURL})
+	}
+	for _, m := range BuiltinMirrors {
+		candidates = append(candidates, candidate{m, m + rawURL})
 	}
 
 	var lastErr error
@@ -84,7 +86,6 @@ func downloadFile(srsDir, filename, rawURL string) (string, error) {
 	return "", lastErr
 }
 
-// fetchToFile downloads url into a temp file next to dst, then renames atomically.
 func fetchToFile(url, dst string) error {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(url)
@@ -95,7 +96,6 @@ func fetchToFile(url, dst string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-
 	tmp := dst + ".tmp"
 	f, err := os.Create(tmp)
 	if err != nil {
