@@ -130,6 +130,9 @@ func officialAssetNames(version, arch, libc string) []string {
 // For musl/OpenWrt systems, try -purego suffix (static/CGO-free build).
 func ref1ndAssetNames(version, arch, libc string) []string {
 	ver := strings.TrimPrefix(version, "v")
+	// reF1nd tags are like "v1.13.9-reF1nd"; strip the "-reF1nd" suffix so the
+	// assembled filename doesn't duplicate it (e.g. "1.13.9-reF1nd-reF1nd-...").
+	ver = strings.TrimSuffix(ver, "-reF1nd")
 	goArch := arch
 	switch arch {
 	case "arm":
