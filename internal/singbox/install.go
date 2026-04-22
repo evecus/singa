@@ -19,6 +19,14 @@ import (
 
 const installPath = "/usr/bin/sing-box"
 
+// Flavor selects which build to download.
+type Flavor string
+
+const (
+	FlavorOfficial Flavor = "official" // SagerNet/sing-box
+	FlavorReF1nd   Flavor = "ref1nd"   // reF1nd/sing-box-releases
+)
+
 // Version returns the installed sing-box version string, or "" if not installed.
 func Version() string {
 	out, err := exec.Command(installPath, "version").Output()
@@ -83,13 +91,17 @@ type ghRelease struct {
 	} `json:"assets"`
 }
 
-func latestRelease() (*ghRelease, error) {
+func latestRelease(repo string) (*ghRelease, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get("https://api.github.com/repos/SagerNet/sing-box/releases/latest")
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("fetch release info: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch release info: HTTP %d", resp.StatusCode)
+	}
 	var rel ghRelease
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
 		return nil, fmt.Errorf("parse release info: %w", err)
@@ -97,7 +109,10 @@ func latestRelease() (*ghRelease, error) {
 	return &rel, nil
 }
 
-func assetNames(version, arch, libc string) []string {
+// officialAssetNames returns candidate asset names for the official SagerNet build.
+// Format: sing-box-{ver}-linux-{arch}.tar.gz
+// For musl systems, try -musl suffix first then fall back to standard.
+func officialAssetNames(version, arch, libc string) []string {
 	ver := strings.TrimPrefix(version, "v")
 	goArch := arch
 	if arch == "arm" {
@@ -110,20 +125,57 @@ func assetNames(version, arch, libc string) []string {
 	return []string{base + ".tar.gz"}
 }
 
-// Install downloads and installs the latest sing-box to /usr/bin/sing-box.
-func Install(proxy string) (string, error) {
+// ref1ndAssetNames returns candidate asset names for reF1nd build.
+// Format: sing-box-{ver}-reF1nd-linux-{arch}.tar.gz
+// For musl/OpenWrt systems, try -purego suffix (static/CGO-free build).
+func ref1ndAssetNames(version, arch, libc string) []string {
+	ver := strings.TrimPrefix(version, "v")
+	goArch := arch
+	switch arch {
+	case "arm":
+		goArch = "armv7"
+	case "arm64":
+		goArch = "arm64"
+	}
+	base := fmt.Sprintf("sing-box-%s-reF1nd-linux-%s", ver, goArch)
+	if libc == "musl" {
+		// purego = no CGO, works on musl/OpenWrt
+		return []string{base + "-purego.tar.gz", base + ".tar.gz"}
+	}
+	return []string{base + ".tar.gz", base + "-purego.tar.gz"}
+}
+
+// Install downloads and installs sing-box to /usr/bin/sing-box.
+// flavor selects official or reF1nd build.
+// proxy is an optional GitHub proxy URL prefix.
+func Install(flavor Flavor, proxy string) (string, error) {
 	sys := DetectSystem()
-	rel, err := latestRelease()
+
+	var repo string
+	var assetNamesFn func(version, arch, libc string) []string
+
+	switch flavor {
+	case FlavorReF1nd:
+		repo = "reF1nd/sing-box-releases"
+		assetNamesFn = ref1ndAssetNames
+	default:
+		repo = "SagerNet/sing-box"
+		assetNamesFn = officialAssetNames
+	}
+
+	rel, err := latestRelease(repo)
 	if err != nil {
 		return "", err
 	}
 
-	names := assetNames(rel.TagName, sys.Arch, sys.LibC)
-	var downloadURL string
-	for _, name := range names {
+	candidates := assetNamesFn(rel.TagName, sys.Arch, sys.LibC)
+
+	var downloadURL, chosenAsset string
+	for _, name := range candidates {
 		for _, asset := range rel.Assets {
 			if asset.Name == name {
 				downloadURL = asset.BrowserDownloadURL
+				chosenAsset = name
 				break
 			}
 		}
@@ -132,9 +184,11 @@ func Install(proxy string) (string, error) {
 		}
 	}
 	if downloadURL == "" {
-		return "", fmt.Errorf("no asset found for linux/%s (%s) version %s", sys.Arch, sys.LibC, rel.TagName)
+		return "", fmt.Errorf("no asset found for linux/%s (%s) version %s in %s\ntried: %v",
+			sys.Arch, sys.LibC, rel.TagName, repo, candidates)
 	}
 
+	// Apply proxy prefix
 	if proxy != "" {
 		p := strings.TrimRight(proxy, "/") + "/"
 		downloadURL = p + downloadURL
@@ -165,20 +219,27 @@ func Install(proxy string) (string, error) {
 	}
 	tmp.Close()
 
-	binPath, err := extractBinary(tmpPath, names[0])
+	// Extract
+	binPath, err := extractBinary(tmpPath, chosenAsset)
 	if err != nil {
 		return "", fmt.Errorf("extract: %w", err)
 	}
 	defer os.Remove(binPath)
 
+	// Set executable permission
 	if err := os.Chmod(binPath, 0755); err != nil {
 		return "", err
 	}
+
+	// Atomic install
 	if err := os.Rename(binPath, installPath); err != nil {
 		if err2 := copyExec(binPath, installPath); err2 != nil {
 			return "", fmt.Errorf("install: %w", err2)
 		}
 	}
+	// Ensure executable bit after copy
+	_ = os.Chmod(installPath, 0755)
+
 	return rel.TagName, nil
 }
 
@@ -223,7 +284,7 @@ func extractFromTarGz(path string) (string, error) {
 			return tmp.Name(), nil
 		}
 	}
-	return "", fmt.Errorf("sing-box not found in archive")
+	return "", fmt.Errorf("sing-box binary not found in archive")
 }
 
 func extractFromZip(path string) (string, error) {
@@ -253,7 +314,7 @@ func extractFromZip(path string) (string, error) {
 			return tmp.Name(), nil
 		}
 	}
-	return "", fmt.Errorf("sing-box not found in zip")
+	return "", fmt.Errorf("sing-box binary not found in zip")
 }
 
 func copyExec(src, dst string) error {
