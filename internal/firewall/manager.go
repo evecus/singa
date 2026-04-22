@@ -8,16 +8,9 @@ import (
 	"github.com/singa/internal/config"
 )
 
-var (
-	mu      sync.Mutex
-	watcher *LocalIPWatcher
-)
+var mu sync.Mutex
 
 // Apply sets up nftables rules for the chosen proxy mode.
-// port is the transparent proxy inbound port (tproxy/redirect).
-// dnsPort is the sing-box dns-in port to redirect DNS traffic into.
-// gid is the kernel cgroup v2 id for the sing-box process; traffic from
-// this cgroup is exempted from interception to prevent routing loops.
 func Apply(mode config.ProxyMode, port int, dnsPort int, lanProxy bool, ipv6 bool, dataDir string, gid uint32) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -44,20 +37,14 @@ func Apply(mode config.ProxyMode, port int, dnsPort int, lanProxy bool, ipv6 boo
 		return fmt.Errorf("unknown proxy mode: %q", mode)
 	}
 
-	if watcher != nil {
-		watcher.Close()
-	}
-	watcher = NewLocalIPWatcher(AddInterfaceIP, RemoveInterfaceIP)
+	// Sync local interface IPs into nftables sets once at startup.
+	SyncLocalIPs()
 	return nil
 }
 
-// Stop tears down nftables rules and stops the IP watcher.
+// Stop tears down nftables rules.
 func Stop() {
 	mu.Lock()
 	defer mu.Unlock()
-	if watcher != nil {
-		watcher.Close()
-		watcher = nil
-	}
 	Cleanup()
 }
