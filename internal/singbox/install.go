@@ -91,14 +91,27 @@ type ghRelease struct {
 	} `json:"assets"`
 }
 
-func latestRelease(repo string) (*ghRelease, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
+// fetchRelease fetches a specific tag (e.g. "v1.13.2", "1.13.2") or "latest".
+func fetchRelease(repo, tag string) (*ghRelease, error) {
+	var u string
+	if tag == "" || tag == "latest" {
+		u = fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
+	} else {
+		t := tag
+		if len(t) == 0 || t[0] != 'v' {
+			t = "v" + t
+		}
+		u = fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", repo, t)
+	}
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(url)
+	resp, err := client.Get(u)
 	if err != nil {
 		return nil, fmt.Errorf("fetch release info: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("version %q not found in %s", tag, repo)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetch release info: HTTP %d", resp.StatusCode)
 	}
@@ -107,6 +120,10 @@ func latestRelease(repo string) (*ghRelease, error) {
 		return nil, fmt.Errorf("parse release info: %w", err)
 	}
 	return &rel, nil
+}
+
+func latestRelease(repo string) (*ghRelease, error) {
+	return fetchRelease(repo, "latest")
 }
 
 // archKeywords returns the arch keyword candidates to look for in an asset filename.
@@ -226,7 +243,9 @@ func pickAsset(assets []struct {
 // Install downloads and installs sing-box to /usr/bin/sing-box.
 // flavor selects official or reF1nd build.
 // proxy is an optional GitHub proxy URL prefix.
-func Install(flavor Flavor, proxy string) (string, error) {
+// Install downloads and installs sing-box.
+// version is "latest" or a specific tag like "v1.13.2" / "1.13.2".
+func Install(flavor Flavor, proxy, version string) (string, error) {
 	sys := DetectSystem()
 
 	var repo string
@@ -237,7 +256,7 @@ func Install(flavor Flavor, proxy string) (string, error) {
 		repo = "SagerNet/sing-box"
 	}
 
-	rel, err := latestRelease(repo)
+	rel, err := fetchRelease(repo, version)
 	if err != nil {
 		return "", err
 	}
