@@ -198,16 +198,27 @@
         <div class="section">
           <div class="section-title">sing-box 核心</div>
           <div class="info-grid" v-if="sbInfo">
-            <span class="info-k">版本</span>
+            <span class="info-k">已安装版本</span>
             <span class="info-v">{{ sbInfo.version || '未安装' }}</span>
             <span class="info-k">架构</span>
             <span class="info-v">{{ sbInfo.arch }}</span>
             <span class="info-k">系统</span>
             <span class="info-v">{{ sbInfo.osName }} / {{ sbInfo.libc }}</span>
           </div>
+          <div class="section-title" style="margin-top:4px">选择版本</div>
+          <div class="flavor-grid">
+            <button class="flavor-btn" :class="{on: sbFlavor==='official'}" @click="sbFlavor='official'">
+              <span class="flavor-name">官方版</span>
+              <span class="flavor-desc">SagerNet/sing-box</span>
+            </button>
+            <button class="flavor-btn" :class="{on: sbFlavor==='ref1nd'}" @click="sbFlavor='ref1nd'">
+              <span class="flavor-name">reF1nd 版</span>
+              <span class="flavor-desc">reF1nd/sing-box-releases</span>
+            </button>
+          </div>
           <div class="settings-actions">
             <button class="icon-btn secondary" @click="fetchSbVersion" :class="{loading: sbChecking}" :disabled="sbChecking">
-              {{ sbChecking ? '检测中…' : '↺ 检测版本' }}
+              {{ sbChecking ? '检测中…' : '↺ 检测已安装版本' }}
             </button>
             <button class="icon-btn" @click="installSingbox" :class="{loading: sbInstalling}" :disabled="sbInstalling">
               {{ sbInstalling ? '下载中…' : '↓ 下载/更新核心' }}
@@ -289,6 +300,7 @@ const blockAds       = ref(false)
 // Settings state
 const ghProxy        = ref('')
 const sbInfo         = ref(null)
+const sbFlavor       = ref('official')
 const sbChecking     = ref(false)
 const sbInstalling   = ref(false)
 const sbMsg          = ref('')
@@ -329,7 +341,7 @@ async function installSingbox() {
   sbInstalling.value = true
   sbMsg.value = ''
   try {
-    const res = await api('POST', '/singbox/install', { proxy: ghProxy.value })
+    const res = await api('POST', '/singbox/install', { proxy: ghProxy.value, flavor: sbFlavor.value })
     sbMsg.value = `✓ 安装成功：${res.version}`
     sbMsgClass.value = 'msg-ok'
     await fetchSbVersion()
@@ -819,6 +831,16 @@ body {
 
 /* Settings */
 .settings-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.flavor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.flavor-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 10px 12px; border: 1.5px solid var(--border); border-radius: var(--radius);
+  background: var(--bg); cursor: pointer; transition: all .15s; color: var(--text2); text-align: left;
+}
+.flavor-btn:hover { border-color: var(--border2); color: var(--text); background: var(--surface); }
+.flavor-btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.flavor-name { font-size: 13px; font-weight: 700; }
+.flavor-desc { font-family: var(--mono); font-size: 10px; opacity: .7; }
 .settings-hint { font-size: 12px; color: var(--text3); line-height: 1.5; }
 .input-row { display: flex; gap: 8px; }
 .text-input {
