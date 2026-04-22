@@ -82,7 +82,14 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
 		tpPreFwdV6 = "\n        meta nfproto ipv6 meta l4proto { tcp, udp } fib saddr type != local fib daddr type != local jump tp_rule"
 	}
 
-	// DNS redirect lines for the nat table
+	// DNS redirect lines for the nat table.
+	// IPv4: exempt only 127.0.0.1 (loopback). Do NOT use "daddr != <lan-ip>"
+	// because LAN clients may send DNS to any of the gateway's IPs; we rely on
+	// the skgid + dport guards above to protect sing-box's own traffic.
+	dnsRedirectV4 := fmt.Sprintf(
+		"        ip daddr != 127.0.0.1 meta l4proto { tcp, udp } th dport 53 redirect to :%d\n",
+		dnsPort,
+	)
 	dnsRedirectV6 := ""
 	if ipv6 {
 		dnsRedirectV6 = fmt.Sprintf(
@@ -118,7 +125,6 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
         ip6 daddr @interface6 return
         # DNS (port 53) is handled by nat redirect below, skip here
         meta l4proto { tcp, udp } th dport 53 return
-        meta mark & 0xc0 == 0x40 return
         jump tp_mark
     }
 
@@ -149,9 +155,8 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
         skgid %d return
         # skip packets already going to our dns-in port
         meta l4proto { tcp, udp } th dport %d return
-        # redirect all DNS to dns-in
-        ip daddr != 127.0.0.1 meta l4proto { tcp, udp } th dport 53 redirect to :%d
-%s    }
+        # redirect DNS to dns-in (covers public IPs and gateway LAN IPs alike)
+%s%s    }
 
     chain prerouting_nat {
         type nat hook prerouting priority dstnat - 5; policy accept;
@@ -163,7 +168,7 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
         jump dns_redirect
     }
 }
-`, tpPreFwdV4, tpPreFwdV6, tproxyLines, gid, nfprotoOut, gid, dnsPort, dnsPort, dnsRedirectV6)
+`, tpPreFwdV4, tpPreFwdV6, tproxyLines, gid, nfprotoOut, gid, dnsPort, dnsRedirectV4, dnsRedirectV6)
 }
 
 // ── redirect ───────────────────────────────────────────────────────────────
