@@ -228,7 +228,7 @@
               v-if="sbVersionMode==='custom'"
               class="text-input ver-input"
               v-model="sbVersionInput"
-              placeholder="1.13.2 或 v1.13.2"
+              placeholder="请输入版本号"
               spellcheck="false"
             />
           </div>
