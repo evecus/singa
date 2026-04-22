@@ -16,6 +16,7 @@ import (
 	"github.com/singa/internal/config"
 	"github.com/singa/internal/core"
 	"github.com/singa/internal/node"
+	"github.com/singa/internal/singbox"
 	"github.com/singa/internal/updater"
 )
 
@@ -49,6 +50,10 @@ func (s *Server) Run(addr string) error {
 		a.GET("/status", s.status)
 		a.GET("/logs", s.streamLogs)
 		a.POST("/update-rules", s.updateRules)
+		// Settings
+		a.GET("/singbox/version", s.singboxVersion)
+		a.POST("/singbox/install", s.singboxInstall)
+		a.GET("/system-info", s.systemInfo)
 	}
 
 	dist, err := fs.Sub(s.webFS, "web/dist")
@@ -76,7 +81,6 @@ func serveDistFile(c *gin.Context, dist fs.FS, path string) {
 			return
 		}
 	}
-	// SPA fallback
 	idx, err := dist.Open("index.html")
 	if err != nil {
 		c.Status(404)
@@ -239,12 +243,18 @@ func sseEscape(s string) string {
 	return string(b[1 : len(b)-1])
 }
 
-var _ = time.Now // suppress unused import if needed
+var _ = time.Now
 
 // ── Update rules ───────────────────────────────────────────────────────────
 
 func (s *Server) updateRules(c *gin.Context) {
-	results := updater.UpdateAll(s.srsDir)
+	var req struct {
+		Proxy string `json:"proxy"`
+	}
+	// ignore parse error — proxy is optional
+	_ = c.ShouldBindJSON(&req)
+
+	results := updater.UpdateAll(s.srsDir, req.Proxy)
 
 	failed := 0
 	for _, r := range results {
@@ -257,4 +267,36 @@ func (s *Server) updateRules(c *gin.Context) {
 		status = http.StatusBadGateway
 	}
 	c.JSON(status, gin.H{"results": results, "failed": failed, "total": len(results)})
+}
+
+// ── sing-box management ────────────────────────────────────────────────────
+
+func (s *Server) singboxVersion(c *gin.Context) {
+	ver := singbox.Version()
+	sys := singbox.DetectSystem()
+	c.JSON(200, gin.H{
+		"version": ver,
+		"arch":    sys.Arch,
+		"libc":    sys.LibC,
+		"osName":  sys.OSName,
+	})
+}
+
+func (s *Server) singboxInstall(c *gin.Context) {
+	var req struct {
+		Proxy string `json:"proxy"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	ver, err := singbox.Install(req.Proxy)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"ok": true, "version": ver})
+}
+
+func (s *Server) systemInfo(c *gin.Context) {
+	sys := singbox.DetectSystem()
+	c.JSON(200, sys)
 }
