@@ -109,43 +109,118 @@ func latestRelease(repo string) (*ghRelease, error) {
 	return &rel, nil
 }
 
-// officialAssetNames returns candidate asset names for the official SagerNet build.
-// Format: sing-box-{ver}-linux-{arch}.tar.gz
-// For musl systems, try -musl suffix first then fall back to standard.
-func officialAssetNames(version, arch, libc string) []string {
-	ver := strings.TrimPrefix(version, "v")
-	goArch := arch
-	if arch == "arm" {
-		goArch = "armv7"
+// archKeywords returns the arch keyword candidates to look for in an asset filename.
+// Ordered from most specific to least specific so the first match wins.
+func archKeywords(arch string) []string {
+	switch arch {
+	case "arm64", "aarch64":
+		return []string{"arm64", "aarch64"}
+	case "arm":
+		return []string{"armv7", "armv6", "arm"}
+	case "amd64":
+		return []string{"amd64", "x86_64"}
+	case "386":
+		return []string{"386", "i386", "x86"}
+	case "mips64le":
+		return []string{"mips64le"}
+	case "mips64":
+		return []string{"mips64"}
+	case "mipsle":
+		return []string{"mipsle", "mipsel"}
+	case "mips":
+		return []string{"mips"}
+	default:
+		return []string{arch}
 	}
-	base := fmt.Sprintf("sing-box-%s-linux-%s", ver, goArch)
-	if libc == "musl" {
-		return []string{base + "-musl.tar.gz", base + ".tar.gz"}
-	}
-	return []string{base + ".tar.gz"}
 }
 
-// ref1ndAssetNames returns candidate asset names for reF1nd build.
-// Format: sing-box-{ver}-reF1nd-linux-{arch}.tar.gz
-// For musl/OpenWrt systems, try -purego suffix (static/CGO-free build).
-func ref1ndAssetNames(version, arch, libc string) []string {
-	ver := strings.TrimPrefix(version, "v")
-	// reF1nd tags are like "v1.13.9-reF1nd"; strip the "-reF1nd" suffix so the
-	// assembled filename doesn't duplicate it (e.g. "1.13.9-reF1nd-reF1nd-...").
-	ver = strings.TrimSuffix(ver, "-reF1nd")
-	goArch := arch
-	switch arch {
-	case "arm":
-		goArch = "armv7"
-	case "arm64":
-		goArch = "arm64"
+// pickAsset selects the best matching asset from a release for the given arch/libc.
+//
+// Strategy (no hardcoded filenames):
+//  1. Keep only assets that are downloadable archives (.tar.gz / .zip) and
+//     contain both "linux" and an arch keyword in the name.
+//  2. Three-tier priority by libc:
+//     glibc: prefer "glibc" tag → generic (no libc tag) → musl/purego static
+//     musl:  prefer "musl"  tag → "purego" static        → generic/glibc dynamic
+//  3. First asset in the winning tier is returned.
+//
+// This way the code never needs updating when the upstream author renames files.
+func pickAsset(assets []struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+}, arch, libc string) (name, url string) {
+
+	archWords := archKeywords(arch)
+	isMusl := libc == "musl"
+
+	isArchive := func(n string) bool {
+		n = strings.ToLower(n)
+		return strings.HasSuffix(n, ".tar.gz") || strings.HasSuffix(n, ".zip")
 	}
-	base := fmt.Sprintf("sing-box-%s-reF1nd-linux-%s", ver, goArch)
-	if libc == "musl" {
-		// purego = no CGO, works on musl/OpenWrt
-		return []string{base + "-purego.tar.gz", base + ".tar.gz"}
+	containsArch := func(n string) bool {
+		lower := strings.ToLower(n)
+		for _, kw := range archWords {
+			if strings.Contains(lower, kw) {
+				return true
+			}
+		}
+		return false
 	}
-	return []string{base + ".tar.gz", base + "-purego.tar.gz"}
+	isLinux := func(n string) bool {
+		return strings.Contains(strings.ToLower(n), "linux")
+	}
+	type candidate struct{ name, url string }
+	var candidates []candidate
+	for _, a := range assets {
+		if !isArchive(a.Name) || !isLinux(a.Name) || !containsArch(a.Name) {
+			continue
+		}
+		candidates = append(candidates, candidate{a.Name, a.BrowserDownloadURL})
+	}
+	if len(candidates) == 0 {
+		return "", ""
+	}
+
+	hasKeyword := func(n, kw string) bool {
+		return strings.Contains(strings.ToLower(n), kw)
+	}
+
+	// Three tiers, first non-empty wins.
+	// glibc: "glibc" tag → generic (no libc tag) → musl/purego static
+	// musl:  "musl"  tag → "purego" static        → generic/glibc dynamic
+	var tier1, tier2, tier3 []candidate
+	for _, c := range candidates {
+		hasGlibc := hasKeyword(c.name, "glibc")
+		hasMusl := hasKeyword(c.name, "musl")
+		hasPurego := hasKeyword(c.name, "purego")
+		isGeneric := !hasGlibc && !hasMusl && !hasPurego
+
+		if isMusl {
+			switch {
+			case hasMusl:
+				tier1 = append(tier1, c)
+			case hasPurego:
+				tier2 = append(tier2, c)
+			default: // generic or glibc
+				tier3 = append(tier3, c)
+			}
+		} else {
+			switch {
+			case hasGlibc:
+				tier1 = append(tier1, c)
+			case isGeneric:
+				tier2 = append(tier2, c)
+			default: // musl/purego static
+				tier3 = append(tier3, c)
+			}
+		}
+	}
+	for _, tier := range [][]candidate{tier1, tier2, tier3} {
+		if len(tier) > 0 {
+			return tier[0].name, tier[0].url
+		}
+	}
+	return "", ""
 }
 
 // Install downloads and installs sing-box to /usr/bin/sing-box.
@@ -155,15 +230,11 @@ func Install(flavor Flavor, proxy string) (string, error) {
 	sys := DetectSystem()
 
 	var repo string
-	var assetNamesFn func(version, arch, libc string) []string
-
 	switch flavor {
 	case FlavorReF1nd:
 		repo = "reF1nd/sing-box-releases"
-		assetNamesFn = ref1ndAssetNames
 	default:
 		repo = "SagerNet/sing-box"
-		assetNamesFn = officialAssetNames
 	}
 
 	rel, err := latestRelease(repo)
@@ -171,24 +242,14 @@ func Install(flavor Flavor, proxy string) (string, error) {
 		return "", err
 	}
 
-	candidates := assetNamesFn(rel.TagName, sys.Arch, sys.LibC)
-
-	var downloadURL, chosenAsset string
-	for _, name := range candidates {
-		for _, asset := range rel.Assets {
-			if asset.Name == name {
-				downloadURL = asset.BrowserDownloadURL
-				chosenAsset = name
-				break
-			}
-		}
-		if downloadURL != "" {
-			break
-		}
-	}
+	chosenAsset, downloadURL := pickAsset(rel.Assets, sys.Arch, sys.LibC)
 	if downloadURL == "" {
-		return "", fmt.Errorf("no asset found for linux/%s (%s) version %s in %s\ntried: %v",
-			sys.Arch, sys.LibC, rel.TagName, repo, candidates)
+		var allNames []string
+		for _, a := range rel.Assets {
+			allNames = append(allNames, a.Name)
+		}
+		return "", fmt.Errorf("no asset found for linux/%s (%s) version %s in %s\navailable: %v",
+			sys.Arch, sys.LibC, rel.TagName, repo, allNames)
 	}
 
 	// Apply proxy prefix
