@@ -77,6 +77,7 @@ func main() {
 		os.Exit(0)
 	}()
 
+	manager.RecoverState()
 	manager.AutoStart()
 
 	srv := api.NewServer(manager, dataDir, srsDir, webFS)

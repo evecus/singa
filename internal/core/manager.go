@@ -374,17 +374,25 @@ func (m *Manager) Start(p StartParams) error {
 }
 
 func (m *Manager) Stop() {
+	// Grab the process pointer under the lock, then release before waiting.
+	// The cmd.Wait() goroutine (started in Start) also needs the lock, so
+	// holding it while waiting would deadlock.
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.cmd != nil && m.cmd.Process != nil {
-		_ = m.cmd.Process.Kill()
+	proc := m.cmd
+	m.mu.Unlock()
+
+	if proc != nil && proc.Process != nil {
+		_ = proc.Process.Kill()
 		done := make(chan struct{})
-		go func() { _ = m.cmd.Wait(); close(done) }()
+		go func() { _ = proc.Wait(); close(done) }()
 		select {
 		case <-done:
 		case <-time.After(3 * time.Second):
 		}
 	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	firewall.Stop()
 	if m.params.ProxyMode == config.ModeSystemProxy {
 		if err := sysproxy.Clear(); err != nil {
@@ -517,4 +525,25 @@ func copyFile(src, dst string) error {
 	defer out.Close()
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// RecoverState checks whether state.json claims running=true but sing-box
+// is not actually running (unclean shutdown / crash). Corrects it to false
+// so the UI shows the right state on next page load.
+// Must be called at startup before AutoStart.
+func (m *Manager) RecoverState() {
+	var ss savedState
+	if err := m.stateStore.Load(&ss); err != nil || !ss.Running {
+		return
+	}
+	// At startup m.cmd is always nil — if state says running, it's stale.
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cmd == nil {
+		log.Printf("singa: stale running=true in state.json, correcting to stopped")
+		ss.Running = false
+		if err := m.stateStore.Save(&ss); err != nil {
+			log.Printf("singa: recover state: %v", err)
+		}
+	}
 }

@@ -36,7 +36,7 @@ func NewLocalIPWatcher(added, removed func(cidr string)) *LocalIPWatcher {
 
 	fd, err := openNetlink()
 	if err != nil {
-		log.Printf("firewall: netlink unavailable, falling back to 120s poll: %v", err)
+		log.Printf("firewall: netlink unavailable, falling back to 30s poll: %v", err)
 		w.startFallback()
 		return w
 	}
@@ -152,8 +152,8 @@ func (w *LocalIPWatcher) startFallback() {
 	go func() {
 		defer w.wg.Done()
 		for {
-			// sleep 120s interruptible by done
-			ts := syscall.Timespec{Sec: 120}
+			// sleep 30s interruptible by done
+			ts := syscall.Timespec{Sec: 30}
 			syscall.Nanosleep(&ts, nil)
 			select {
 			case <-w.done:
