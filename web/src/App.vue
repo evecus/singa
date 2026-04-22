@@ -17,6 +17,12 @@
           <span class="status-dot"></span>
           <span>{{ statusLabel }}</span>
         </div>
+        <button class="settings-btn" :class="{active: tab==='settings'}" @click="tab='settings'" title="设置">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
       </div>
     </header>
 
@@ -24,7 +30,6 @@
     <div v-show="tab==='config'" class="tab-content">
       <div class="sidebar">
 
-        <!-- Config mode -->
         <div class="section">
           <div class="section-title">配置模式</div>
           <div class="seg">
@@ -35,19 +40,12 @@
           </div>
         </div>
 
-        <!-- NODE MODE -->
         <template v-if="configMode==='node'">
           <div class="section">
             <div class="section-title-row">
               <span class="section-title">节点</span>
-              <div class="title-actions">
-                <button class="icon-btn secondary" :class="{loading: updatingRules}" :disabled="updatingRules" @click="updateRules">
-                  {{ updatingRules ? '更新中…' : '↻ 更新规则集' }}
-                </button>
-                <button class="icon-btn" @click="showImport=true">＋ 导入</button>
-              </div>
+              <button class="icon-btn" @click="showImport=true">＋ 导入</button>
             </div>
-            <div v-if="updateRulesMsg" class="update-msg" :class="updateRulesMsgClass">{{ updateRulesMsg }}</div>
             <div v-if="nodes.length===0" class="empty-tip">暂无节点，点击「导入」添加</div>
             <div v-else class="node-list">
               <div v-for="n in nodes" :key="n.id"
@@ -77,7 +75,6 @@
           </div>
         </template>
 
-        <!-- UPLOAD MODE -->
         <template v-else>
           <div class="section">
             <div class="section-title">配置文件</div>
@@ -99,7 +96,6 @@
           </div>
         </template>
 
-        <!-- Proxy mode -->
         <div class="section">
           <div class="section-title">透明代理模式</div>
           <div class="proxy-grid">
@@ -113,7 +109,6 @@
           </div>
         </div>
 
-        <!-- Toggles -->
         <div class="section">
           <div class="section-title">网络选项</div>
           <div class="toggle-group">
@@ -150,7 +145,6 @@
           </div>
         </div>
 
-        <!-- Start / Stop -->
         <div class="section action-section">
           <button v-if="!isRunning" class="btn-start"
             :disabled="startDisabled" @click="startCore">
@@ -161,10 +155,8 @@
           </button>
         </div>
 
-        <!-- Error -->
         <div v-if="errorMsg" class="error-bar">⚠ {{ errorMsg }}</div>
 
-        <!-- Runtime info -->
         <div v-if="isRunning" class="section">
           <div class="section-title">运行状态</div>
           <div class="info-grid">
@@ -195,6 +187,66 @@
         </div>
       </div>
       <div class="log-foot">{{ logs.length }} lines</div>
+      </div>
+    </div>
+
+    <!-- ── Settings tab ── -->
+    <div v-show="tab==='settings'" class="tab-content">
+      <div class="sidebar">
+
+        <!-- sing-box core -->
+        <div class="section">
+          <div class="section-title">sing-box 核心</div>
+          <div class="info-grid" v-if="sbInfo">
+            <span class="info-k">版本</span>
+            <span class="info-v">{{ sbInfo.version || '未安装' }}</span>
+            <span class="info-k">架构</span>
+            <span class="info-v">{{ sbInfo.arch }}</span>
+            <span class="info-k">系统</span>
+            <span class="info-v">{{ sbInfo.osName }} / {{ sbInfo.libc }}</span>
+          </div>
+          <div class="settings-actions">
+            <button class="icon-btn secondary" @click="fetchSbVersion" :class="{loading: sbChecking}" :disabled="sbChecking">
+              {{ sbChecking ? '检测中…' : '↺ 检测版本' }}
+            </button>
+            <button class="icon-btn" @click="installSingbox" :class="{loading: sbInstalling}" :disabled="sbInstalling">
+              {{ sbInstalling ? '下载中…' : '↓ 下载/更新核心' }}
+            </button>
+          </div>
+          <div v-if="sbMsg" class="update-msg" :class="sbMsgClass">{{ sbMsg }}</div>
+        </div>
+
+        <!-- 规则集 -->
+        <div class="section">
+          <div class="section-title">规则集</div>
+          <div class="settings-actions">
+            <button class="icon-btn" @click="updateRules" :class="{loading: updatingRules}" :disabled="updatingRules">
+              {{ updatingRules ? '更新中…' : '↻ 更新规则集' }}
+            </button>
+          </div>
+          <div v-if="updateRulesMsg" class="update-msg" :class="updateRulesMsgClass">{{ updateRulesMsg }}</div>
+          <div v-if="updateRulesDetail.length" class="rules-detail">
+            <div v-for="r in updateRulesDetail" :key="r.file" class="rules-row" :class="{err: r.error}">
+              <span class="rules-file">{{ r.file }}</span>
+              <span class="rules-mirror">{{ r.error || r.mirror }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- GitHub 代理 -->
+        <div class="section">
+          <div class="section-title">GitHub 代理加速</div>
+          <p class="settings-hint">用于更新规则集和下载 sing-box 核心，留空则直连后自动尝试内置镜像</p>
+          <div class="input-row">
+            <input class="text-input" v-model="ghProxy" placeholder="https://your-proxy.com/" spellcheck="false"/>
+            <button class="icon-btn" @click="saveProxy">保存</button>
+          </div>
+          <div class="proxy-presets">
+            <span class="preset-label">预设：</span>
+            <button v-for="p in proxyPresets" :key="p" class="preset-btn" @click="ghProxy=p">{{ p }}</button>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -234,15 +286,68 @@ const lanProxy       = ref(false)
 const ipv6           = ref(false)
 const blockAds       = ref(false)
 
-const updatingRules    = ref(false)
-const updateRulesMsg   = ref('')
+// Settings state
+const ghProxy        = ref('')
+const sbInfo         = ref(null)
+const sbChecking     = ref(false)
+const sbInstalling   = ref(false)
+const sbMsg          = ref('')
+const sbMsgClass     = ref('')
+const updatingRules      = ref(false)
+const updateRulesMsg     = ref('')
 const updateRulesMsgClass = ref('')
+const updateRulesDetail  = ref([])
+
+const proxyPresets = [
+  'https://ghfast.top/',
+  'https://gh-proxy.com/',
+  'https://ghproxy.it/',
+]
+
+function saveProxy() {
+  localStorage.setItem('ghProxy', ghProxy.value)
+}
+
+function loadProxy() {
+  ghProxy.value = localStorage.getItem('ghProxy') || ''
+}
+
+async function fetchSbVersion() {
+  sbChecking.value = true
+  sbMsg.value = ''
+  try {
+    sbInfo.value = await api('GET', '/singbox/version')
+  } catch (e) {
+    sbMsg.value = '✕ ' + e.message
+    sbMsgClass.value = 'msg-err'
+  } finally {
+    sbChecking.value = false
+  }
+}
+
+async function installSingbox() {
+  sbInstalling.value = true
+  sbMsg.value = ''
+  try {
+    const res = await api('POST', '/singbox/install', { proxy: ghProxy.value })
+    sbMsg.value = `✓ 安装成功：${res.version}`
+    sbMsgClass.value = 'msg-ok'
+    await fetchSbVersion()
+  } catch (e) {
+    sbMsg.value = '✕ ' + e.message
+    sbMsgClass.value = 'msg-err'
+  } finally {
+    sbInstalling.value = false
+  }
+}
 
 async function updateRules() {
-  updatingRules.value  = true
+  updatingRules.value = true
   updateRulesMsg.value = ''
+  updateRulesDetail.value = []
   try {
-    const res = await api('POST', '/update-rules')
+    const res = await api('POST', '/update-rules', { proxy: ghProxy.value })
+    updateRulesDetail.value = res.results || []
     if (res.failed === 0) {
       updateRulesMsg.value = `✓ 全部 ${res.total} 个规则集更新成功`
       updateRulesMsgClass.value = 'msg-ok'
@@ -250,7 +355,7 @@ async function updateRules() {
       updateRulesMsg.value = `⚠ ${res.total - res.failed}/${res.total} 成功，${res.failed} 个失败`
       updateRulesMsgClass.value = 'msg-warn'
     } else {
-      updateRulesMsg.value = `✕ 全部更新失败，请检查网络`
+      updateRulesMsg.value = `✕ 全部更新失败，请检查网络或设置代理`
       updateRulesMsgClass.value = 'msg-err'
     }
   } catch (e) {
@@ -260,8 +365,8 @@ async function updateRules() {
     updatingRules.value = false
   }
 }
-const selectedNodeId = ref('')
 
+const selectedNodeId = ref('')
 const nodes        = ref([])
 const uploadInfo   = ref(null)
 const status       = ref({ state: 'stopped' })
@@ -430,6 +535,7 @@ function onLogScroll() {
 }
 
 onMounted(async () => {
+  loadProxy()
   await Promise.all([loadNodes(), pollStatus()])
   try { uploadInfo.value = await api('GET', '/config/info') } catch {}
   configMode.value     = status.value.configMode  || 'node'
@@ -442,6 +548,8 @@ onMounted(async () => {
   if (isRunning.value) startSSE()
   pollTimer = setInterval(pollStatus, 10000)
   if (logEl.value) logEl.value.addEventListener('scroll', onLogScroll)
+  // Pre-fetch sing-box version for settings page
+  fetchSbVersion()
 })
 onUnmounted(() => { stopSSE(); clearInterval(pollTimer) })
 </script>
@@ -480,67 +588,41 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-.app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-}
+.app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
-/* ── topbar ── */
+/* topbar */
 .topbar {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  height: 52px;
-  padding: 0 20px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  gap: 0;
+  flex-shrink: 0; display: flex; align-items: center;
+  height: 52px; padding: 0 20px;
+  background: var(--surface); border-bottom: 1px solid var(--border); gap: 0;
 }
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-right: 32px;
-}
+.brand { display: flex; align-items: center; gap: 8px; margin-right: 32px; }
 .brand-icon { color: var(--accent); font-size: 20px; line-height: 1; }
 .brand-name { font-size: 17px; font-weight: 700; letter-spacing: .03em; }
 .brand-sub  {
   font-family: var(--mono); font-size: 10px; color: var(--text3);
   letter-spacing: .15em; text-transform: uppercase; margin-top: 1px;
 }
-
-/* ── tab nav (centered in topbar) ── */
-.tab-nav {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex: 1;
-}
+.tab-nav { display: flex; align-items: center; gap: 2px; flex: 1; }
 .tab-btn {
-  padding: 6px 20px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  font-family: var(--sans);
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text3);
-  cursor: pointer;
-  transition: all .15s;
-  position: relative;
+  padding: 6px 20px; background: transparent; border: none; border-radius: 6px;
+  font-family: var(--sans); font-size: 14px; font-weight: 500; color: var(--text3);
+  cursor: pointer; transition: all .15s;
 }
 .tab-btn:hover { color: var(--text2); background: var(--bg); }
-.tab-btn.active {
-  color: var(--accent);
-  font-weight: 700;
-  background: var(--accent-bg);
-}
+.tab-btn.active { color: var(--accent); font-weight: 700; background: var(--accent-bg); }
 
-/* status pill */
-.topbar-right { margin-left: auto; }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+.settings-btn {
+  width: 32px; height: 32px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; color: var(--text3);
+  cursor: pointer; transition: all .15s;
+}
+.settings-btn:hover { background: var(--bg); color: var(--text2); }
+.settings-btn.active { background: var(--accent-bg); color: var(--accent); }
+
 .status-pill {
   display: flex; align-items: center; gap: 6px; padding: 4px 12px;
   border-radius: 20px; font-size: 12px; font-weight: 600; border: 1.5px solid;
@@ -554,41 +636,23 @@ body {
 .pill-err .status-dot  { background: var(--red); }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-/* ── tab content ── */
-.tab-content {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-/* ── config tab = sidebar ── */
+.tab-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 .tab-content .sidebar {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  max-width: 500px;
-  width: 100%;
-  margin: 0 auto;
+  flex: 1; overflow-y: auto; padding: 20px;
+  display: flex; flex-direction: column; gap: 16px;
+  max-width: 500px; width: 100%; margin: 0 auto;
 }
 .sidebar::-webkit-scrollbar { width: 4px; }
 .sidebar::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
-/* sections */
 .section { display: flex; flex-direction: column; gap: 8px; }
 .section-title {
   font-size: 11px; font-weight: 700; letter-spacing: .1em;
   text-transform: uppercase; color: var(--text3);
 }
-.section-title-row {
-  display: flex; justify-content: space-between; align-items: center;
-}
+.section-title-row { display: flex; justify-content: space-between; align-items: center; }
 .title-actions { display: flex; gap: 6px; align-items: center; }
 
-/* segmented control */
 .seg {
   display: grid; grid-template-columns: 1fr 1fr; gap: 0;
   border: 1.5px solid var(--border2); border-radius: var(--radius); overflow: hidden;
@@ -603,7 +667,6 @@ body {
 .seg-btn.on { background: var(--accent-bg); color: var(--accent); font-weight: 700; }
 .seg-btn:disabled { opacity: .45; cursor: not-allowed; }
 
-/* node list */
 .icon-btn {
   display: flex; align-items: center; gap: 4px;
   padding: 4px 10px; background: var(--accent); color: #fff;
@@ -613,8 +676,7 @@ body {
 .icon-btn:hover:not(:disabled) { background: var(--accent-h); }
 .icon-btn:disabled { opacity: .5; cursor: not-allowed; }
 .icon-btn.secondary {
-  background: none; border: 1px solid var(--border2); color: var(--text3);
-  font-weight: 500;
+  background: none; border: 1px solid var(--border2); color: var(--text3); font-weight: 500;
 }
 .icon-btn.secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
 .icon-btn.loading { background: none; border: 1px solid var(--accent); color: var(--accent); font-weight: 500; }
@@ -628,7 +690,6 @@ body {
 .msg-err  { background: var(--red-bg); color: var(--red); }
 
 .empty-tip { font-size: 12px; color: var(--text3); text-align: center; padding: 14px 0; }
-
 .node-list { display: flex; flex-direction: column; gap: 5px; max-height: 200px; overflow-y: auto; }
 .node-list::-webkit-scrollbar { width: 3px; }
 .node-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
@@ -653,10 +714,7 @@ body {
 .p-hysteria2 { background: #fff1f2; color: #e11d48; }
 
 .node-meta { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-.node-name {
-  font-size: 13px; font-weight: 500;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
+.node-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .node-addr { font-family: var(--mono); font-size: 10px; color: var(--text3); }
 
 .del-btn {
@@ -666,7 +724,6 @@ body {
 .del-btn:hover:not(:disabled) { color: var(--red); background: var(--red-bg); }
 .del-btn:disabled { opacity: .35; cursor: not-allowed; }
 
-/* route grid */
 .route-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .route-btn {
   display: flex; flex-direction: column; align-items: center; gap: 3px;
@@ -680,7 +737,6 @@ body {
 .route-name { font-size: 12px; font-weight: 700; }
 .route-desc { font-size: 10px; opacity: .7; text-align: center; line-height: 1.3; }
 
-/* dropzone */
 .dropzone {
   border: 2px dashed var(--border2); border-radius: var(--radius); padding: 20px;
   display: flex; flex-direction: column; align-items: center; gap: 6px;
@@ -702,7 +758,6 @@ body {
 .ib-tag  { color: var(--text2); flex: 1; }
 .ib-port { color: var(--accent); font-weight: 700; }
 
-/* proxy grid */
 .proxy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .proxy-btn {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
@@ -716,28 +771,23 @@ body {
 .proxy-name { font-family: var(--mono); font-size: 11px; font-weight: 700; }
 .proxy-desc { font-size: 10px; opacity: .7; }
 
-/* toggles */
 .toggle-group { display: flex; flex-direction: column; gap: 10px; }
 .toggle-row { display: flex; align-items: center; gap: 12px; cursor: pointer; }
 .toggle-row.disabled { opacity: .45; pointer-events: none; }
 .toggle-track {
   width: 44px; height: 24px; border-radius: 12px;
-  background: var(--border2); position: relative;
-  transition: background .2s; flex-shrink: 0; cursor: pointer;
+  background: var(--border2); position: relative; transition: background .2s; flex-shrink: 0; cursor: pointer;
 }
 .toggle-track.on { background: var(--accent); }
 .toggle-thumb {
-  position: absolute; top: 3px; left: 3px;
-  width: 18px; height: 18px; border-radius: 50%;
-  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2);
-  transition: transform .2s;
+  position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: transform .2s;
 }
 .toggle-track.on .toggle-thumb { transform: translateX(20px); }
 .toggle-labels { display: flex; flex-direction: column; gap: 1px; }
 .toggle-name { font-size: 13px; font-weight: 600; color: var(--text); }
 .toggle-hint { font-size: 11px; color: var(--text3); }
 
-/* actions */
 .action-section { flex-direction: row; }
 .btn-start, .btn-stop {
   flex: 1; padding: 12px; font-family: var(--sans); font-size: 15px; font-weight: 700;
@@ -750,14 +800,12 @@ body {
 .btn-stop  { background: var(--red-bg); color: var(--red); border: 1.5px solid var(--red); }
 .btn-stop:hover { background: #fed7d7; }
 
-/* error */
 .error-bar {
   padding: 9px 12px; background: var(--red-bg);
   border: 1px solid #feb2b2; border-radius: var(--radius);
   color: var(--red); font-size: 12px; line-height: 1.5;
 }
 
-/* info grid */
 .info-grid {
   display: grid; grid-template-columns: auto 1fr; gap: 1px;
   background: var(--border); border-radius: var(--radius); overflow: hidden;
@@ -769,29 +817,55 @@ body {
 }
 .info-v { font-family: var(--mono); color: var(--blue); font-weight: 600; }
 
-/* ── log pane ── */
+/* Settings */
+.settings-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.settings-hint { font-size: 12px; color: var(--text3); line-height: 1.5; }
+.input-row { display: flex; gap: 8px; }
+.text-input {
+  flex: 1; padding: 7px 10px; border: 1.5px solid var(--border2); border-radius: var(--radius);
+  font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--bg);
+  outline: none; transition: border-color .15s;
+}
+.text-input:focus { border-color: var(--accent); }
+.proxy-presets { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.preset-label { font-size: 11px; color: var(--text3); }
+.preset-btn {
+  font-family: var(--mono); font-size: 10px; padding: 2px 8px;
+  border: 1px solid var(--border2); border-radius: 4px;
+  background: var(--bg); color: var(--text2); cursor: pointer; transition: all .15s;
+}
+.preset-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+
+.rules-detail {
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 160px; overflow-y: auto; margin-top: 4px;
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 4px;
+}
+.rules-detail::-webkit-scrollbar { width: 3px; }
+.rules-detail::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.rules-row {
+  display: flex; justify-content: space-between; gap: 8px;
+  font-family: var(--mono); font-size: 10px; padding: 3px 6px; border-radius: 3px;
+  color: var(--text2);
+}
+.rules-row.err { color: var(--red); background: var(--red-bg); }
+.rules-file { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rules-mirror { color: var(--text3); flex-shrink: 0; }
+.rules-row.err .rules-mirror { color: var(--red); }
+
+/* log pane */
 .logpane { background: var(--bg); }
 .log-inner {
-  max-width: 900px;
-  width: 100%;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  overflow: hidden;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
+  max-width: 900px; width: 100%; margin: 0 auto;
+  display: flex; flex-direction: column; flex: 1; overflow: hidden;
+  background: var(--surface); border-left: 1px solid var(--border); border-right: 1px solid var(--border);
 }
 .log-topbar {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 16px; border-bottom: 1px solid var(--border);
   flex-shrink: 0; background: var(--surface);
 }
-.log-live {
-  font-family: var(--mono); font-size: 10px; color: var(--text3);
-  letter-spacing: .1em; margin-right: auto;
-}
+.log-live { font-family: var(--mono); font-size: 10px; color: var(--text3); letter-spacing: .1em; margin-right: auto; }
 .log-live.live { color: var(--accent); animation: blink 1.4s infinite; }
 .log-clear {
   background: none; border: 1px solid var(--border2); color: var(--text3);
@@ -799,11 +873,9 @@ body {
   font-family: var(--mono); transition: all .15s;
 }
 .log-clear:hover { border-color: var(--border2); color: var(--text); }
-
 .log-body {
   flex: 1; overflow-y: auto; padding: 12px 16px;
-  font-family: var(--mono); font-size: 12px; line-height: 1.9;
-  background: var(--surface);
+  font-family: var(--mono); font-size: 12px; line-height: 1.9; background: var(--surface);
 }
 .log-body::-webkit-scrollbar { width: 4px; }
 .log-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
@@ -814,15 +886,12 @@ body {
 .l-err  { color: var(--red) !important; }
 .l-warn { color: var(--warn) !important; }
 .l-info { color: var(--text) !important; }
-
 .log-foot {
-  flex-shrink: 0; padding: 6px 16px;
-  border-top: 1px solid var(--border);
-  font-family: var(--mono); font-size: 10px; color: var(--text3);
-  background: var(--surface);
+  flex-shrink: 0; padding: 6px 16px; border-top: 1px solid var(--border);
+  font-family: var(--mono); font-size: 10px; color: var(--text3); background: var(--surface);
 }
 
-/* ── modal ── */
+/* modal */
 .mask {
   position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100;
   display: flex; align-items: center; justify-content: center; padding: 16px;
@@ -870,7 +939,6 @@ body {
 .btn-ok:hover:not(:disabled) { background: var(--accent-h); }
 .btn-ok:disabled { opacity: .4; cursor: not-allowed; }
 
-/* ── mobile ── */
 @media (max-width: 768px) {
   .brand-sub { display: none; }
   .tab-content .sidebar { padding: 16px; }
