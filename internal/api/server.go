@@ -284,11 +284,17 @@ func (s *Server) singboxVersion(c *gin.Context) {
 
 func (s *Server) singboxInstall(c *gin.Context) {
 	var req struct {
-		Proxy string `json:"proxy"`
+		Proxy  string `json:"proxy"`
+		Flavor string `json:"flavor"` // "official" or "ref1nd"
 	}
 	_ = c.ShouldBindJSON(&req)
 
-	ver, err := singbox.Install(req.Proxy)
+	flavor := singbox.FlavorOfficial
+	if req.Flavor == "ref1nd" {
+		flavor = singbox.FlavorReF1nd
+	}
+
+	ver, err := singbox.Install(flavor, req.Proxy)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
