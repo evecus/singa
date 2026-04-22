@@ -216,6 +216,22 @@
               <span class="flavor-desc">reF1nd/sing-box-releases</span>
             </button>
           </div>
+          <div class="section-title" style="margin-top:4px">选择版本号</div>
+          <div class="version-selector">
+            <label class="ver-opt" :class="{on: sbVersionMode==='latest'}" @click="sbVersionMode='latest'">
+              <span class="ver-radio"></span>latest
+            </label>
+            <label class="ver-opt" :class="{on: sbVersionMode==='custom'}" @click="sbVersionMode='custom'">
+              <span class="ver-radio"></span>自定义
+            </label>
+            <input
+              v-if="sbVersionMode==='custom'"
+              class="text-input ver-input"
+              v-model="sbVersionInput"
+              placeholder="1.13.2 或 v1.13.2"
+              spellcheck="false"
+            />
+          </div>
           <div class="settings-actions">
             <button class="icon-btn secondary" @click="fetchSbVersion" :class="{loading: sbChecking}" :disabled="sbChecking">
               {{ sbChecking ? '检测中…' : '↺ 检测已安装版本' }}
@@ -305,6 +321,8 @@ const sbChecking     = ref(false)
 const sbInstalling   = ref(false)
 const sbMsg          = ref('')
 const sbMsgClass     = ref('')
+const sbVersionMode  = ref('latest')  // 'latest' | 'custom'
+const sbVersionInput = ref('')
 const updatingRules      = ref(false)
 const updateRulesMsg     = ref('')
 const updateRulesMsgClass = ref('')
@@ -341,7 +359,10 @@ async function installSingbox() {
   sbInstalling.value = true
   sbMsg.value = ''
   try {
-    const res = await api('POST', '/singbox/install', { proxy: ghProxy.value, flavor: sbFlavor.value })
+    const version = sbVersionMode.value === 'custom' && sbVersionInput.value.trim()
+      ? sbVersionInput.value.trim()
+      : 'latest'
+    const res = await api('POST', '/singbox/install', { proxy: ghProxy.value, flavor: sbFlavor.value, version })
     sbMsg.value = `✓ 安装成功：${res.version}`
     sbMsgClass.value = 'msg-ok'
     await fetchSbVersion()
@@ -841,6 +862,11 @@ body {
 .flavor-btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
 .flavor-name { font-size: 13px; font-weight: 700; }
 .flavor-desc { font-family: var(--mono); font-size: 10px; opacity: .7; }
+.version-selector { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.ver-opt { display: flex; align-items: center; gap: 5px; font-size: 13px; cursor: pointer; user-select: none; padding: 3px 0; }
+.ver-opt .ver-radio { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--border2); display: inline-flex; align-items: center; justify-content: center; transition: border-color .15s; }
+.ver-opt.on .ver-radio { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2px var(--surface); }
+.ver-input { flex: 1; min-width: 120px; font-size: 12px; padding: 4px 8px; }
 .settings-hint { font-size: 12px; color: var(--text3); line-height: 1.5; }
 .input-row { display: flex; gap: 8px; }
 .text-input {
