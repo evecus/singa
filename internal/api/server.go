@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -19,6 +20,28 @@ import (
 	"github.com/singa/internal/singbox"
 	"github.com/singa/internal/updater"
 )
+
+// skipAllRE matches every path — we handle filtering in errorOnlyFormatter
+// so that only 4xx/5xx responses are actually printed.
+var skipAllRE = []*regexp.Regexp{
+	regexp.MustCompile(`.*`),
+}
+
+// errorOnlyFormatter is a gin LogFormatter that suppresses successful (1xx-3xx)
+// responses and only emits a line when the status code indicates an error.
+var errorOnlyFormatter gin.LogFormatter = func(param gin.LogFormatterParams) string {
+	if param.StatusCode < 400 {
+		return ""
+	}
+	return fmt.Sprintf("[GIN] %s | %d | %s | %s | %s %s\n",
+		param.TimeStamp.Format("2006/01/02 - 15:04:05"),
+		param.StatusCode,
+		param.Latency,
+		param.ClientIP,
+		param.Method,
+		param.Path,
+	)
+}
 
 type Server struct {
 	manager *core.Manager
@@ -35,7 +58,10 @@ func (s *Server) Run(addr string) error {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{
-		SkipPaths: []string{"/api/status"},
+		// Only log requests that result in an error (4xx/5xx).
+		// Successful API calls and all static assets are noise.
+		SkipPathRegexps: skipAllRE,
+		Formatter: errorOnlyFormatter,
 	}), gin.Recovery(), cors.Default())
 
 	a := r.Group("/api")
