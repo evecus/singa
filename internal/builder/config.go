@@ -73,7 +73,7 @@ func BuildConfig(
 
 func buildInbounds(mode config.ProxyMode, ports Ports, listen string) []interface{} {
 	inbounds := []interface{}{
-		// DNS inbound: always :: on port 1053, receives raw DNS queries for hijack-dns
+		// DNS inbound: receives raw DNS queries for hijack-dns
 		M{
 			"tag":         "dns-in",
 			"type":        "direct",
@@ -145,9 +145,9 @@ func buildDNS(routeMode RouteMode, ipv6 bool) M {
 			"domain_resolver": "bootstrap-dns",
 		},
 		M{
-			"type":           "udp",
-			"tag":            "bootstrap-dns",
-			"server":         "223.5.5.5",
+			"type":   "udp",
+			"tag":    "bootstrap-dns",
+			"server": "223.5.5.5",
 		},
 	}
 
@@ -231,25 +231,29 @@ func buildRouteRules(routeMode RouteMode, isReF1nd bool, blockAds bool) []interf
 		})
 	}
 
-	// Private domains always go direct (ip_is_private removed intentionally)
+	// Always route loopback and private IPs direct before any other rules.
+	// This is the primary guard against traffic loops: sing-box itself connects
+	// to 127.0.0.1 (dns-in, mixed-in, tproxy-in), and without this rule those
+	// connections can be re-captured by nftables after conntrack entries expire
+	// (UDP entries expire in ~30s), causing a feedback loop with tens of
+	// thousands of connections and 100% CPU.
+	// ip_is_private covers: 127.x, 10.x, 172.16-31.x, 192.168.x, ::1, fc00::/7.
 	rules = append(rules,
+		M{"ip_is_private": true, "outbound": "direct"},
 		M{"rule_set": []string{"geosite-private", "geoip-private"}, "outbound": "direct"},
 	)
 
-	// Ad blocking: inserted before per-mode rules so ads are rejected regardless
-	// of route mode. Only added when blockAds is enabled.
+	// Ad blocking: inserted before per-mode rules so ads are rejected
+	// regardless of route mode. Only added when blockAds is enabled.
 	if blockAds {
 		rules = append(rules, M{"action": "reject", "rule_set": []string{"ads"}})
 	}
 
 	switch routeMode {
 	case RouteModeWhitelist:
-		cnDomainRule := M{"rule_set": []string{"geosite-cn"}, "outbound": "direct"}
 		rules = append(rules,
-			// CN DNS server IPs → direct (prevent DNS pollution)
-			M{"ip_cidr": cnDNS(), "outbound": "direct"},
 			// CN domains → direct
-			cnDomainRule,
+			M{"rule_set": []string{"geosite-cn"}, "outbound": "direct"},
 		)
 		// reF1nd build: resolve CN domains before routing to get real IPs,
 		// so subsequent geoip-cn rule can match them correctly.
@@ -264,8 +268,6 @@ func buildRouteRules(routeMode RouteMode, isReF1nd bool, blockAds bool) []interf
 
 	case RouteModeGFWList:
 		rules = append(rules,
-			// Foreign DNS IPs → proxy (prevent DNS leak)
-			M{"ip_cidr": foreignDNS(), "outbound": "proxy"},
 			// GFW/non-CN domains → proxy
 			M{"rule_set": []string{"geosite-gfw", "geosite-geolocation-!cn"}, "outbound": "proxy"},
 			// Well-known foreign service IPs → proxy
@@ -311,22 +313,4 @@ func buildRuleSets(routeMode RouteMode, srsDir string, blockAds bool) []interfac
 	}
 
 	return out
-}
-
-// ── DNS IP lists ───────────────────────────────────────────────────────────
-
-func cnDNS() []string {
-	return []string{
-		"223.5.5.5", "223.6.6.6", "119.29.29.29",
-		"1.12.12.12", "120.53.53.53", "180.76.76.76",
-		"114.114.114.114", "114.114.115.115",
-	}
-}
-
-func foreignDNS() []string {
-	return []string{
-		"1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4",
-		"9.9.9.9", "149.112.112.112",
-		"94.140.14.14", "94.140.15.15",
-	}
 }
