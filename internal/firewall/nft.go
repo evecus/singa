@@ -51,11 +51,8 @@ func setupTproxy(port int, dnsPort int, lanProxy bool, ipv6 bool, gid uint32) er
 }
 
 func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
-	// FIX: tp_pre chain uses separate ipv4/ipv6 nfproto matchers so that
+	// tp_pre chain uses separate ipv4/ipv6 nfproto matchers so that
 	// tproxy statements can specify the correct address family without conflict.
-	// Previously a single "meta nfproto { ipv4, ipv6 }" was used with
-	// "tproxy ip to 127.0.0.1:port", which nftables rejects as conflicting
-	// protocols (ip6 vs. ip).
 	nfprotoOut := "meta nfproto ipv4"
 	if ipv6 {
 		nfprotoOut = "meta nfproto { ipv4, ipv6 }"
@@ -73,19 +70,15 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
 		)
 	}
 
-	// tp_pre forward match: for LAN traffic use per-family matchers as well
-	tpPreFwdV4 := fmt.Sprintf(
-		"meta nfproto ipv4 meta l4proto { tcp, udp } fib saddr type != local fib daddr type != local jump tp_rule",
-	)
+	// tp_pre forward match: for LAN traffic use per-family matchers
+	tpPreFwdV4 := "meta nfproto ipv4 meta l4proto { tcp, udp } fib saddr type != local fib daddr type != local jump tp_rule"
 	tpPreFwdV6 := ""
 	if ipv6 {
 		tpPreFwdV6 = "\n        meta nfproto ipv6 meta l4proto { tcp, udp } fib saddr type != local fib daddr type != local jump tp_rule"
 	}
 
 	// DNS redirect lines for the nat table.
-	// IPv4: exempt only 127.0.0.1 (loopback). Do NOT use "daddr != <lan-ip>"
-	// because LAN clients may send DNS to any of the gateway's IPs; we rely on
-	// the skgid + dport guards above to protect sing-box's own traffic.
+	// Exempt 127.0.0.1 (loopback) to avoid redirecting sing-box's own DNS.
 	dnsRedirectV4 := fmt.Sprintf(
 		"        ip daddr != 127.0.0.1 meta l4proto { tcp, udp } th dport 53 redirect to :%d\n",
 		dnsPort,
@@ -121,6 +114,13 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
     chain tp_rule {
         meta mark set ct mark
         meta mark & 0xc0 == 0x40 return
+        # Hardcoded private-range bypass: prevents sing-box's own connections
+        # to 127.x (dns-in, mixed-in, tproxy-in) from being re-captured after
+        # conntrack entries expire (UDP entries expire in ~30s), which would
+        # otherwise cause a traffic feedback loop with tens of thousands of
+        # loopback connections and 100%% CPU usage.
+        ip daddr { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } return
+        ip6 daddr { ::1, fc00::/7, fe80::/10 } return
         ip daddr @interface return
         ip6 daddr @interface6 return
         # DNS (port 53) is handled by nat redirect below, skip here
@@ -153,9 +153,9 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
     chain dns_redirect {
         # skip sing-box own traffic
         skgid %d return
-        # skip packets already going to our dns-in port
+        # skip packets already going to our dns-in port (prevents redirect loop)
         meta l4proto { tcp, udp } th dport %d return
-        # redirect DNS to dns-in (covers public IPs and gateway LAN IPs alike)
+        # redirect DNS to dns-in
 %s%s    }
 
     chain prerouting_nat {
@@ -237,6 +237,11 @@ func buildRedirectTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
         ip daddr @interface return
         ip6 daddr @whitelist6 return
         ip6 daddr @interface6 return
+        # Explicit loopback guard: whitelist set covers 127.0.0.0/8 statically
+        # but this makes the intent unambiguous and protects against any
+        # future set changes breaking the loopback bypass.
+        ip daddr { 127.0.0.0/8 } return
+        ip6 daddr { ::1 } return
         skgid %d return
         # skip DNS, handled by dns_redirect chain
         meta l4proto { tcp, udp } th dport 53 return
