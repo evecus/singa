@@ -119,10 +119,6 @@ func buildInbounds(mode config.ProxyMode, ports Ports, listen string) []interfac
 // ── DNS ────────────────────────────────────────────────────────────────────
 
 func buildDNS(routeMode RouteMode, ipv6 bool) M {
-	// sing-box 1.12+: new DNS server format requires explicit "type" field.
-	// "strategy" moves to dns top-level or per-rule, not per-server.
-	// "address_resolver" renamed to "domain_resolver".
-	// "independent_cache" deprecated in 1.14, removed.
 	strategy := "ipv4_only"
 	if ipv6 {
 		strategy = "prefer_ipv4"
@@ -136,11 +132,14 @@ func buildDNS(routeMode RouteMode, ipv6 bool) M {
 			"domain_resolver": "bootstrap-dns",
 			"detour":          "proxy",
 		},
+		// Use plain UDP for direct-dns. The previous DoH (https type) sent
+		// queries to 223.5.5.5:443, which requires a working HTTPS connection
+		// and can time out when the network blocks port 443 for direct traffic.
+		// UDP port 53 is simpler and universally available on domestic resolvers.
 		M{
-			"type":            "https",
+			"type":            "udp",
 			"tag":             "direct-dns",
 			"server":          "223.5.5.5",
-			"domain_resolver": "bootstrap-dns",
 		},
 		M{
 			"type":   "udp",
@@ -185,11 +184,6 @@ func buildDNS(routeMode RouteMode, ipv6 bool) M {
 // ── Route ──────────────────────────────────────────────────────────────────
 
 func buildRoute(routeMode RouteMode, srsDir string, isReF1nd bool, blockAds bool) M {
-	// default_domain_resolver is required since sing-box 1.12.0.
-	// It tells the router which DNS server to use when resolving domains
-	// in route rules. We pick the appropriate resolver based on route mode:
-	// - whitelist/global: remote-dns (proxy-side resolver)
-	// - gfwlist: direct-dns (direct-side resolver, since most traffic is direct)
 	defaultResolver := "remote-dns"
 	if routeMode == RouteModeGFWList {
 		defaultResolver = "direct-dns"
@@ -217,6 +211,22 @@ func buildRouteRules(routeMode RouteMode, isReF1nd bool, blockAds bool) []interf
 		M{"action": "sniff", "timeout": "500ms"},
 		// Hijack DNS queries received on dns-in inbound
 		M{"inbound": []string{"dns-in"}, "action": "hijack-dns"},
+		// Reject multicast and broadcast UDP immediately.
+		// When lanProxy is enabled, LAN devices (Windows, Android, etc.)
+		// continuously send LLMNR (224.0.0.252), mDNS (224.0.0.251), SSDP
+		// (239.255.255.250), and broadcast (255.255.255.255) packets. tproxy
+		// captures all of them and hands them to sing-box, where they queue
+		// as open connections waiting for a reply that never comes — visible
+		// as 1000+ connections in the Clash API dashboard. Rejecting here
+		// drops them before they can accumulate.
+		M{
+			"ip_cidr": []string{
+				"224.0.0.0/4",        // IPv4 multicast (LLMNR, mDNS, SSDP, ...)
+				"255.255.255.255/32", // IPv4 limited broadcast
+				"ff00::/8",           // IPv6 multicast
+			},
+			"action": "reject",
+		},
 	}
 
 	// Block QUIC (UDP 443) for whitelist and gfwlist modes to force TCP,
