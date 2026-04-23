@@ -114,11 +114,18 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
     chain tp_rule {
         meta mark set ct mark
         meta mark & 0xc0 == 0x40 return
+        # Drop multicast and broadcast at the nft level before they enter
+        # sing-box. When lanProxy is on, LAN devices send a constant stream
+        # of LLMNR (224.0.0.252), mDNS (224.0.0.251), SSDP (239.255.255.250)
+        # and broadcast (255.255.255.255) UDP packets. Without this rule they
+        # accumulate as open sing-box connections (visible as 1000+ in the
+        # Clash API) because no reply is ever sent. Returning here lets the
+        # kernel handle or drop them normally without involving sing-box.
+        ip daddr { 224.0.0.0/4, 255.255.255.255 } return
+        ip6 daddr ff00::/8 return
         # Hardcoded private-range bypass: prevents sing-box's own connections
         # to 127.x (dns-in, mixed-in, tproxy-in) from being re-captured after
-        # conntrack entries expire (UDP entries expire in ~30s), which would
-        # otherwise cause a traffic feedback loop with tens of thousands of
-        # loopback connections and 100%% CPU usage.
+        # conntrack entries expire (UDP entries expire in ~30s).
         ip daddr { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } return
         ip6 daddr { ::1, fc00::/7, fe80::/10 } return
         ip daddr @interface return
@@ -233,13 +240,12 @@ func buildRedirectTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
     }
 
     chain tp_rule {
+        # whitelist already includes 224.0.0.0/4 and 255.255.255.255 via 240.0.0.0/4,
+        # so multicast/broadcast are covered without an explicit rule here.
         ip daddr @whitelist return
         ip daddr @interface return
         ip6 daddr @whitelist6 return
         ip6 daddr @interface6 return
-        # Explicit loopback guard: whitelist set covers 127.0.0.0/8 statically
-        # but this makes the intent unambiguous and protects against any
-        # future set changes breaking the loopback bypass.
         ip daddr { 127.0.0.0/8 } return
         ip6 daddr { ::1 } return
         skgid %d return
