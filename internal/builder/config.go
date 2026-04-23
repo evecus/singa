@@ -58,8 +58,6 @@ func BuildConfig(
 			},
 			"clash_api": M{
 				"external_controller": "0.0.0.0:9090",
-				"external_ui":         "ui",
-				"default_mode":        "rule",
 			},
 		},
 	}
