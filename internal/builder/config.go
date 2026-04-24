@@ -130,24 +130,14 @@ func buildDNS(routeMode RouteMode, ipv6 bool) M {
 
 	servers := []interface{}{
 		M{
-			"type":            "tls",
-			"tag":             "remote-dns",
-			"server":          "1.1.1.1",
-			"domain_resolver": "bootstrap-dns",
-			"detour":          "proxy",
-		},
-		// Use plain UDP for direct-dns. The previous DoH (https type) sent
-		// queries to 223.5.5.5:443, which requires a working HTTPS connection
-		// and can time out when the network blocks port 443 for direct traffic.
-		// UDP port 53 is simpler and universally available on domestic resolvers.
-		M{
-			"type":            "udp",
-			"tag":             "direct-dns",
-			"server":          "223.5.5.5",
+			"type":   "tls",
+			"tag":    "remote-dns",
+			"server": "1.1.1.1",
+			"detour": "proxy",
 		},
 		M{
 			"type":   "udp",
-			"tag":    "bootstrap-dns",
+			"tag":    "direct-dns",
 			"server": "223.5.5.5",
 		},
 	}
@@ -156,9 +146,9 @@ func buildDNS(routeMode RouteMode, ipv6 bool) M {
 	var finalDNS string
 	switch routeMode {
 	case RouteModeWhitelist:
-		// CN/private domains → direct-dns; everything else → remote-dns
+		// CN domains → direct-dns; everything else → remote-dns
 		rules = append(rules, M{
-			"rule_set": []string{"geosite-cn", "geosite-private"},
+			"rule_set": []string{"geosite-cn"},
 			"action":   "route",
 			"server":   "direct-dns",
 		})
@@ -215,45 +205,7 @@ func buildRouteRules(routeMode RouteMode, isReF1nd bool, blockAds bool) []interf
 		M{"action": "sniff", "timeout": "500ms"},
 		// Hijack DNS queries received on dns-in inbound
 		M{"inbound": []string{"dns-in"}, "action": "hijack-dns"},
-		// Reject multicast and broadcast UDP immediately.
-		// When lanProxy is enabled, LAN devices (Windows, Android, etc.)
-		// continuously send LLMNR (224.0.0.252), mDNS (224.0.0.251), SSDP
-		// (239.255.255.250), and broadcast (255.255.255.255) packets. tproxy
-		// captures all of them and hands them to sing-box, where they queue
-		// as open connections waiting for a reply that never comes — visible
-		// as 1000+ connections in the Clash API dashboard. Rejecting here
-		// drops them before they can accumulate.
-		M{
-			"ip_cidr": []string{
-				"224.0.0.0/4",        // IPv4 multicast (LLMNR, mDNS, SSDP, ...)
-				"255.255.255.255/32", // IPv4 limited broadcast
-				"ff00::/8",           // IPv6 multicast
-			},
-			"action": "reject",
-		},
 	}
-
-	// Block QUIC (UDP 443) for whitelist and gfwlist modes to force TCP,
-	// which is more reliably proxied. Not applied in global mode.
-	if routeMode == RouteModeWhitelist || routeMode == RouteModeGFWList {
-		rules = append(rules, M{
-			"network": []string{"udp"},
-			"port":    []int{443},
-			"action":  "reject",
-		})
-	}
-
-	// Always route loopback and private IPs direct before any other rules.
-	// This is the primary guard against traffic loops: sing-box itself connects
-	// to 127.0.0.1 (dns-in, mixed-in, tproxy-in), and without this rule those
-	// connections can be re-captured by nftables after conntrack entries expire
-	// (UDP entries expire in ~30s), causing a feedback loop with tens of
-	// thousands of connections and 100% CPU.
-	// ip_is_private covers: 127.x, 10.x, 172.16-31.x, 192.168.x, ::1, fc00::/7.
-	rules = append(rules,
-		M{"ip_is_private": true, "outbound": "direct"},
-		M{"rule_set": []string{"geosite-private", "geoip-private"}, "outbound": "direct"},
-	)
 
 	// Ad blocking: inserted before per-mode rules so ads are rejected
 	// regardless of route mode. Only added when blockAds is enabled.
@@ -295,7 +247,9 @@ func buildRouteRules(routeMode RouteMode, isReF1nd bool, blockAds bool) []interf
 }
 
 func buildRuleSets(routeMode RouteMode, srsDir string, blockAds bool) []interface{} {
-	tags := []string{"geosite-private", "geoip-private"}
+	// geosite-private and geoip-private are no longer needed: private/reserved
+	// IP bypass is handled entirely by the nft reserved_ip / reserved_ip6 sets.
+	var tags []string
 
 	switch routeMode {
 	case RouteModeWhitelist:
