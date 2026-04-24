@@ -282,6 +282,9 @@ func (m *Manager) Start(p StartParams) error {
 		}
 		ports.TProxy = port
 		ports.Redirect = port
+		if dnsPort := config.DetectDNSPort(cfg); dnsPort > 0 {
+			ports.DNS = dnsPort
+		}
 		m.ports = ports
 
 	case "node":
