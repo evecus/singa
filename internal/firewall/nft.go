@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/singa/internal/ipfilter"
 )
 
 var nftConfPath string
@@ -16,10 +18,52 @@ func SetNftConfPath(dir string) {
 	nftConfPath = filepath.Join(dir, "singa-nft.conf")
 }
 
-// ── tproxy ─────────────────────────────────────────────────────────────────
+// buildIPFilterSet returns the nft set definition and rule snippet for IP filtering.
+// set defines: set ip_filter { type ipv4_addr; flags interval; auto-merge; elements = { ... } }
+// ruleSnippet: line inserted in tp_rule/tun_rule just before the jump action.
+func buildIPFilterNft(ipf ipfilter.Config, lanProxy bool) (setDef string, ruleSnippet string) {
+	if ipf.Mode == ipfilter.ModeOff || !lanProxy || strings.TrimSpace(ipf.IPs) == "" {
+		return "", ""
+	}
+	// Parse IPs
+	parts := strings.Fields(ipf.IPs)
+	var elems []string
+	for _, p := range parts {
+		// accept both plain IP and CIDR
+		if strings.Contains(p, "/") {
+			if _, _, err := net.ParseCIDR(p); err == nil {
+				elems = append(elems, p)
+			}
+		} else if ip := net.ParseIP(p); ip != nil {
+			elems = append(elems, p)
+		}
+	}
+	if len(elems) == 0 {
+		return "", ""
+	}
+	elemStr := strings.Join(elems, ", ")
+	setDef = fmt.Sprintf(`    set ip_filter {
+        type ipv4_addr
+        flags interval
+        auto-merge
+        elements = { %s }
+    }
+`, elemStr)
 
-func setupTproxy(port int, dnsPort int, lanProxy bool, ipv6 bool, gid uint32) error {
-	conf := buildTproxyTable(port, dnsPort, ipv6, gid)
+	switch ipf.Mode {
+	case ipfilter.ModeBlacklist:
+		// Sources in the list bypass sing-box
+		ruleSnippet = "        ip saddr @ip_filter return\n"
+	case ipfilter.ModeWhitelist:
+		// Sources NOT in the list bypass sing-box
+		ruleSnippet = "        ip saddr != @ip_filter return\n"
+	}
+	return setDef, ruleSnippet
+}
+
+// ── tproxy ─────────────────────────────────────────────────────────────────
+func setupTproxy(port int, dnsPort int, lanProxy bool, ipv6 bool, gid uint32, ipf ipfilter.Config) error {
+	conf := buildTproxyTable(port, dnsPort, ipv6, gid, ipf, lanProxy)
 	if err := os.WriteFile(nftConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write nft conf: %w", err)
 	}
@@ -50,7 +94,8 @@ func setupTproxy(port int, dnsPort int, lanProxy bool, ipv6 bool, gid uint32) er
 	return runCmd("nft -f " + nftConfPath)
 }
 
-func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
+func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32, ipf ipfilter.Config, lanProxy bool) string {
+	ipfSetDef, ipfRule := buildIPFilterNft(ipf, lanProxy)
 	// tp_pre chain uses separate ipv4/ipv6 nfproto matchers so that
 	// tproxy statements can specify the correct address family without conflict.
 	nfprotoOut := "meta nfproto ipv4"
@@ -102,7 +147,7 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
         flags interval
         auto-merge
     }
-
+%s
     # ── mangle: tproxy for normal traffic ──────────────────────────────────
 
     chain tp_mark {
@@ -126,7 +171,7 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
         ip6 daddr @interface6 return
         # DNS (port 53) is handled by nat redirect below, skip here
         meta l4proto { tcp, udp } th dport 53 return
-        jump tp_mark
+%s        jump tp_mark
     }
 
     chain tp_pre {
@@ -169,13 +214,13 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
         jump dns_redirect
     }
 }
-`, tpPreFwdV4, tpPreFwdV6, tproxyLines, gid, nfprotoOut, gid, dnsPort, dnsRedirectV4, dnsRedirectV6)
+`, ipfSetDef, ipfRule, tpPreFwdV4, tpPreFwdV6, tproxyLines, gid, nfprotoOut, gid, dnsPort, dnsRedirectV4, dnsRedirectV6)
 }
 
 // ── redirect ───────────────────────────────────────────────────────────────
 
-func setupRedirect(port int, dnsPort int, lanProxy bool, ipv6 bool, gid uint32) error {
-	conf := buildRedirectTable(port, dnsPort, ipv6, gid)
+func setupRedirect(port int, dnsPort int, lanProxy bool, ipv6 bool, gid uint32, ipf ipfilter.Config) error {
+	conf := buildRedirectTable(port, dnsPort, ipv6, gid, ipf, lanProxy)
 	if err := os.WriteFile(nftConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write nft conf: %w", err)
 	}
@@ -187,7 +232,8 @@ func setupRedirect(port int, dnsPort int, lanProxy bool, ipv6 bool, gid uint32) 
 	return runCmd("nft -f " + nftConfPath)
 }
 
-func buildRedirectTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
+func buildRedirectTable(port int, dnsPort int, ipv6 bool, gid uint32, ipf ipfilter.Config, lanProxy bool) string {
+	ipfSetDef, ipfRule := buildIPFilterNft(ipf, lanProxy)
 	nfproto := "meta nfproto { ipv4, ipv6 }"
 	if !ipv6 {
 		nfproto = "meta nfproto ipv4"
@@ -212,7 +258,7 @@ func buildRedirectTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
         flags interval
         auto-merge
     }
-
+%s
     chain tp_rule {
         # Bypass multicast/broadcast and all private/reserved ranges before
         # redirecting. Keeps LAN multicast spam and loopback traffic out of
@@ -225,7 +271,7 @@ func buildRedirectTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
         skgid %d return
         # skip DNS, handled by dns_redirect chain
         meta l4proto { tcp, udp } th dport 53 return
-        %s meta l4proto tcp redirect to :%d
+%s        %s meta l4proto tcp redirect to :%d
     }
 
     chain dns_redirect {
@@ -246,7 +292,7 @@ func buildRedirectTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
         jump tp_rule
     }
 }
-`, gid, nfproto, port, gid, dnsPort, dnsPort, dnsRedirectV6)
+`, ipfSetDef, gid, ipfRule, nfproto, port, gid, dnsPort, dnsPort, dnsRedirectV6)
 }
 
 // ── Cleanup ────────────────────────────────────────────────────────────────
@@ -281,8 +327,8 @@ const tunFwMark = "0x41"
 const tunFwMask = "0xc1"
 const tunTable = 101
 
-func setupTun(dnsPort int, lanProxy bool, ipv6 bool, gid uint32) error {
-	conf := buildTunTable(dnsPort, ipv6, gid)
+func setupTun(dnsPort int, lanProxy bool, ipv6 bool, gid uint32, ipf ipfilter.Config) error {
+	conf := buildTunTable(dnsPort, ipv6, gid, ipf, lanProxy)
 	if err := os.WriteFile(nftConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write nft conf: %w", err)
 	}
@@ -313,7 +359,8 @@ func setupTun(dnsPort int, lanProxy bool, ipv6 bool, gid uint32) error {
 	return runCmd("nft -f " + nftConfPath)
 }
 
-func buildTunTable(dnsPort int, ipv6 bool, gid uint32) string {
+func buildTunTable(dnsPort int, ipv6 bool, gid uint32, ipf ipfilter.Config, lanProxy bool) string {
+	ipfSetDef, ipfRule := buildIPFilterNft(ipf, lanProxy)
 	nfprotoOut := "meta nfproto ipv4"
 	if ipv6 {
 		nfprotoOut = "meta nfproto { ipv4, ipv6 }"
@@ -354,7 +401,7 @@ func buildTunTable(dnsPort int, ipv6 bool, gid uint32) string {
         flags interval
         auto-merge
     }
-
+%s
     # ── mangle: mark traffic for tun routing ───────────────────────────────
 
     chain tun_mark {
@@ -374,7 +421,7 @@ func buildTunTable(dnsPort int, ipv6 bool, gid uint32) string {
         ip6 daddr @interface6 return
         # DNS is handled by nat redirect chain
         meta l4proto { tcp, udp } th dport 53 return
-        jump tun_mark
+%s        jump tun_mark
     }
 
     chain tun_pre {
@@ -413,7 +460,7 @@ func buildTunTable(dnsPort int, ipv6 bool, gid uint32) string {
         jump dns_redirect
     }
 }
-`, tunFwMark, tunFwMask, tunFwMark, tunDevice, tunMarkV4, tunMarkV6,
+`, ipfSetDef, tunFwMark, tunFwMask, tunFwMark, ipfRule, tunDevice, tunMarkV4, tunMarkV6,
 		gid, nfprotoOut,
 		gid, dnsPort, dnsRedirectV4, dnsRedirectV6)
 }

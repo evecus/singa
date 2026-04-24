@@ -18,6 +18,7 @@ import (
 	"github.com/singa/internal/builder"
 	"github.com/singa/internal/config"
 	"github.com/singa/internal/firewall"
+	"github.com/singa/internal/ipfilter"
 	"github.com/singa/internal/node"
 	"github.com/singa/internal/storage"
 	"github.com/singa/internal/sysproxy"
@@ -77,8 +78,9 @@ type Manager struct {
 	params StartParams
 	ports  builder.Ports
 
-	nodeStore  *storage.Store
-	stateStore *storage.Store
+	nodeStore      *storage.Store
+	stateStore     *storage.Store
+	ipfilterStore  *storage.Store
 	nodes      []*node.Node
 
 	logMu   sync.RWMutex
@@ -95,8 +97,9 @@ func NewManager(dataDir, runDir, srsDir string) *Manager {
 		configsDir: configsDir,
 		state:      StateStopped,
 		logBuf:     make([]string, 0, 500),
-		nodeStore:  storage.New(dataDir, "nodes.json"),
-		stateStore: storage.New(dataDir, "state.json"),
+		nodeStore:      storage.New(dataDir, "nodes.json"),
+		stateStore:     storage.New(dataDir, "state.json"),
+		ipfilterStore:  storage.New(dataDir, "ipfilter.json"),
 	}
 	m.loadNodes()
 	// Load last saved params so Status() can return them before AutoStart.
@@ -313,7 +316,9 @@ func (m *Manager) Start(p StartParams) error {
 	if p.ProxyMode == config.ModeRedirect {
 		fwPort = ports.Redirect
 	}
-	if err := firewall.Apply(p.ProxyMode, fwPort, ports.DNS, p.LanProxy, p.IPv6, m.dataDir, gid); err != nil {
+	var ipf ipfilter.Config
+	_ = m.ipfilterStore.Load(&ipf)
+	if err := firewall.Apply(p.ProxyMode, fwPort, ports.DNS, p.LanProxy, p.IPv6, m.dataDir, gid, ipf); err != nil {
 		return fmt.Errorf("firewall: %w", err)
 	}
 
@@ -436,6 +441,19 @@ func (m *Manager) findNode(id string) *node.Node {
 }
 
 // ── Status ─────────────────────────────────────────────────────────────────
+
+func (m *Manager) GetIPFilter() ipfilter.Config {
+	var cfg ipfilter.Config
+	_ = m.ipfilterStore.Load(&cfg)
+	if cfg.Mode == "" {
+		cfg.Mode = ipfilter.ModeOff
+	}
+	return cfg
+}
+
+func (m *Manager) SaveIPFilter(cfg ipfilter.Config) error {
+	return m.ipfilterStore.Save(&cfg)
+}
 
 func (m *Manager) Status() map[string]interface{} {
 	m.mu.Lock()

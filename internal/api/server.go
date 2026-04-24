@@ -15,6 +15,7 @@ import (
 	"github.com/singa/internal/builder"
 	"github.com/singa/internal/config"
 	"github.com/singa/internal/core"
+	"github.com/singa/internal/ipfilter"
 	"github.com/singa/internal/node"
 	"github.com/singa/internal/singbox"
 	"github.com/singa/internal/updater"
@@ -69,6 +70,8 @@ func (s *Server) Run(addr string) error {
 		a.GET("/singbox/version", s.singboxVersion)
 		a.POST("/singbox/install", s.singboxInstall)
 		a.GET("/system-info", s.systemInfo)
+		a.GET("/ip-filter", s.getIPFilter)
+		a.POST("/ip-filter", s.saveIPFilter)
 	}
 
 	dist, err := fs.Sub(s.webFS, "web/dist")
@@ -324,4 +327,28 @@ func (s *Server) singboxInstall(c *gin.Context) {
 func (s *Server) systemInfo(c *gin.Context) {
 	sys := singbox.DetectSystem()
 	c.JSON(200, sys)
+}
+
+func (s *Server) getIPFilter(c *gin.Context) {
+	cfg := s.manager.GetIPFilter()
+	c.JSON(200, cfg)
+}
+
+func (s *Server) saveIPFilter(c *gin.Context) {
+	var cfg ipfilter.Config
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	switch cfg.Mode {
+	case ipfilter.ModeOff, ipfilter.ModeBlacklist, ipfilter.ModeWhitelist:
+	default:
+		c.JSON(400, gin.H{"error": "invalid mode"})
+		return
+	}
+	if err := s.manager.SaveIPFilter(cfg); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"ok": true})
 }

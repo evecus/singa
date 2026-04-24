@@ -6,12 +6,13 @@ import (
 	"sync"
 
 	"github.com/singa/internal/config"
+	"github.com/singa/internal/ipfilter"
 )
 
 var mu sync.Mutex
 
 // Apply sets up nftables rules for the chosen proxy mode.
-func Apply(mode config.ProxyMode, port int, dnsPort int, lanProxy bool, ipv6 bool, dataDir string, gid uint32) error {
+func Apply(mode config.ProxyMode, port int, dnsPort int, lanProxy bool, ipv6 bool, dataDir string, gid uint32, ipf ipfilter.Config) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -20,15 +21,15 @@ func Apply(mode config.ProxyMode, port int, dnsPort int, lanProxy bool, ipv6 boo
 
 	switch mode {
 	case config.ModeTProxy:
-		if err := setupTproxy(port, dnsPort, lanProxy, ipv6, gid); err != nil {
+		if err := setupTproxy(port, dnsPort, lanProxy, ipv6, gid, ipf); err != nil {
 			return fmt.Errorf("tproxy setup: %w", err)
 		}
 	case config.ModeRedirect:
-		if err := setupRedirect(port, dnsPort, lanProxy, ipv6, gid); err != nil {
+		if err := setupRedirect(port, dnsPort, lanProxy, ipv6, gid, ipf); err != nil {
 			return fmt.Errorf("redirect setup: %w", err)
 		}
 	case config.ModeTun:
-		if err := setupTun(dnsPort, lanProxy, ipv6, gid); err != nil {
+		if err := setupTun(dnsPort, lanProxy, ipv6, gid, ipf); err != nil {
 			return fmt.Errorf("tun setup: %w", err)
 		}
 	case config.ModeSystemProxy:

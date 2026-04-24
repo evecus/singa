@@ -275,6 +275,37 @@
           </div>
         </div>
 
+        <!-- IP 过滤 -->
+        <div class="section">
+          <div class="section-title">局域网 IP 过滤</div>
+          <p class="settings-hint">仅在开启局域网代理时生效。黑名单：列表内 IP 不进 sing-box；白名单：仅列表内 IP 进 sing-box。</p>
+          <div class="proxy-grid">
+            <button class="proxy-btn" :class="{on: ipfMode==='off'}" @click="ipfMode='off'">
+              <span class="proxy-icon">⬡</span>
+              <span class="proxy-name">关闭</span>
+              <span class="proxy-desc">不过滤</span>
+            </button>
+            <button class="proxy-btn" :class="{on: ipfMode==='blacklist'}" @click="ipfMode='blacklist'">
+              <span class="proxy-icon">⬡</span>
+              <span class="proxy-name">黑名单</span>
+              <span class="proxy-desc">列表内不代理</span>
+            </button>
+            <button class="proxy-btn" :class="{on: ipfMode==='whitelist'}" @click="ipfMode='whitelist'">
+              <span class="proxy-icon">⬡</span>
+              <span class="proxy-name">白名单</span>
+              <span class="proxy-desc">仅列表内代理</span>
+            </button>
+          </div>
+          <textarea class="text-input" v-model="ipfIPs"
+            :disabled="ipfMode==='off'"
+            placeholder="多个地址用空格分隔，支持 CIDR，如：192.168.1.100 192.168.2.0/24"
+            rows="3" style="margin-top:8px;resize:vertical;width:100%;box-sizing:border-box"></textarea>
+          <div class="input-row" style="margin-top:8px">
+            <button class="icon-btn" @click="saveIPFilter">保存</button>
+            <span v-if="ipfMsg" :class="ipfMsg.startsWith('✓') ? 'msg-ok' : 'msg-err'" style="margin-left:8px;font-size:12px">{{ ipfMsg }}</span>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -316,6 +347,9 @@ const blockAds       = ref(false)
 
 // Settings state
 const ghProxy        = ref('')
+const ipfMode        = ref('off')
+const ipfIPs         = ref('')
+const ipfMsg         = ref('')
 const sbInfo         = ref(null)
 const sbFlavor       = ref('official')
 const sbChecking     = ref(false)
@@ -337,6 +371,22 @@ const proxyPresets = [
 
 function saveProxy() {
   localStorage.setItem('ghProxy', ghProxy.value)
+}
+
+async function loadIPFilter() {
+  try {
+    const r = await api('GET', '/ip-filter')
+    ipfMode.value = r.mode || 'off'
+    ipfIPs.value  = r.ips  || ''
+  } catch (_) {}
+}
+
+async function saveIPFilter() {
+  try {
+    await api('POST', '/ip-filter', { mode: ipfMode.value, ips: ipfIPs.value })
+    ipfMsg.value = '✓ 已保存'
+    setTimeout(() => { ipfMsg.value = '' }, 2000)
+  } catch (e) { ipfMsg.value = '✕ ' + e.message }
 }
 
 function loadProxy() {
@@ -582,7 +632,7 @@ function onLogScroll() {
 
 onMounted(async () => {
   loadProxy()
-  await Promise.all([loadNodes(), pollStatus()])
+  await Promise.all([loadNodes(), pollStatus(), loadIPFilter()])
   try { uploadInfo.value = await api('GET', '/config/info') } catch {}
   configMode.value     = status.value.configMode  || 'node'
   proxyMode.value      = status.value.proxyMode   || 'tproxy'
