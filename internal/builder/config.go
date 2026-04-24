@@ -112,7 +112,7 @@ func buildInbounds(mode config.ProxyMode, ports Ports, listen string) []interfac
 			"type":           "tun",
 			"interface_name": "singa",
 			"address":        []string{"172.31.0.1/30", "fdfe:dcba:9876::1/126"},
-			"auto_route":     true,
+			"auto_route":     false,
 			"auto_redirect":  false,
 		})
 		// system_proxy: mixed-in only, no transparent inbound needed
