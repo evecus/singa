@@ -254,6 +254,7 @@ func buildRedirectTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
 func Cleanup() {
 	_ = runCmd("nft delete table inet singa")
 	cleanupTproxyRoutes()
+	cleanupTunRoutes()
 	if nftConfPath != "" {
 		_ = os.Remove(nftConfPath)
 	}
@@ -270,7 +271,165 @@ func cleanupTproxyRoutes() {
 	}
 }
 
-// ── Interface IP management ────────────────────────────────────────────────
+// ── tun ────────────────────────────────────────────────────────────────────
+
+const tunDevice = "singa"
+
+// tunFwMark is the fwmark used to identify traffic that should be routed into
+// the tun device. Must not overlap with the tproxy mark (0x40/0xc0).
+const tunFwMark = "0x41"
+const tunFwMask = "0xc1"
+const tunTable = 101
+
+func setupTun(dnsPort int, lanProxy bool, ipv6 bool, gid uint32) error {
+	conf := buildTunTable(dnsPort, ipv6, gid)
+	if err := os.WriteFile(nftConfPath, []byte(conf), 0644); err != nil {
+		return fmt.Errorf("write nft conf: %w", err)
+	}
+
+	// Policy routing: fwmark tunFwMark → table tunTable → route into tun device.
+	routeCmds := []string{
+		fmt.Sprintf("ip rule add fwmark %s/%s table %d", tunFwMark, tunFwMask, tunTable),
+		fmt.Sprintf("ip route add default dev %s table %d", tunDevice, tunTable),
+	}
+	if ipv6 {
+		routeCmds = append(routeCmds,
+			fmt.Sprintf("ip -6 rule add fwmark %s/%s table %d", tunFwMark, tunFwMask, tunTable),
+			fmt.Sprintf("ip -6 route add default dev %s table %d", tunDevice, tunTable),
+		)
+	}
+	for _, c := range routeCmds {
+		if err := runCmd(c); err != nil {
+			log.Printf("firewall: tun route: %v", err)
+		}
+	}
+
+	if lanProxy {
+		if err := enableIPForward(ipv6); err != nil {
+			log.Printf("firewall: ip_forward: %v", err)
+		}
+	}
+
+	return runCmd("nft -f " + nftConfPath)
+}
+
+func buildTunTable(dnsPort int, ipv6 bool, gid uint32) string {
+	nfprotoOut := "meta nfproto ipv4"
+	if ipv6 {
+		nfprotoOut = "meta nfproto { ipv4, ipv6 }"
+	}
+
+	// DNS redirect lines for the nat table.
+	dnsRedirectV4 := fmt.Sprintf(
+		"        ip daddr != 127.0.0.1 meta l4proto { tcp, udp } th dport 53 redirect to :%d\n",
+		dnsPort,
+	)
+	dnsRedirectV6 := ""
+	if ipv6 {
+		dnsRedirectV6 = fmt.Sprintf(
+			"        ip6 daddr != ::1 meta l4proto { tcp, udp } th dport 53 redirect to :%d\n",
+			dnsPort,
+		)
+	}
+
+	// For LAN (prerouting) traffic: per-family fwmark lines.
+	tunMarkV4 := fmt.Sprintf(
+		"        meta nfproto ipv4 meta l4proto { tcp, udp } fib saddr type != local fib daddr type != local jump tun_rule\n",
+	)
+	tunMarkV6 := ""
+	if ipv6 {
+		tunMarkV6 = fmt.Sprintf(
+			"        meta nfproto ipv6 meta l4proto { tcp, udp } fib saddr type != local fib daddr type != local jump tun_rule\n",
+		)
+	}
+
+	return fmt.Sprintf(`table inet singa {
+    set interface {
+        type ipv4_addr
+        flags interval
+        auto-merge
+    }
+    set interface6 {
+        type ipv6_addr
+        flags interval
+        auto-merge
+    }
+
+    # ── mangle: mark traffic for tun routing ───────────────────────────────
+
+    chain tun_mark {
+        meta mark set meta mark | %s
+        ct mark set meta mark
+    }
+
+    chain tun_rule {
+        meta mark set ct mark
+        # already marked → already processed
+        meta mark & %s == %s return
+        # bypass multicast/broadcast and all private/reserved ranges
+        fib daddr type { local, broadcast, anycast, multicast } return
+        ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.88.99.0/24, 192.168.0.0/16, 198.18.0.0/15, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/3 } return
+        ip6 daddr { ::/127, fc00::/7, fe80::/10, ff00::/8 } return
+        ip daddr @interface return
+        ip6 daddr @interface6 return
+        # DNS is handled by nat redirect chain
+        meta l4proto { tcp, udp } th dport 53 return
+        jump tun_mark
+    }
+
+    chain tun_pre {
+        iifname "%s" return
+%s%s    }
+
+    chain tun_out {
+        skgid %d return
+        %s meta l4proto { tcp, udp } fib saddr type local fib daddr type != local jump tun_rule
+    }
+
+    chain prerouting_mangle {
+        type filter hook prerouting priority mangle - 5; policy accept;
+        jump tun_pre
+    }
+
+    chain output_mangle {
+        type route hook output priority mangle - 5; policy accept;
+        jump tun_out
+    }
+
+    # ── nat: redirect port 53 → sing-box dns-in ────────────────────────────
+
+    chain dns_redirect {
+        skgid %d return
+        meta l4proto { tcp, udp } th dport %d return
+%s%s    }
+
+    chain prerouting_nat {
+        type nat hook prerouting priority dstnat - 5; policy accept;
+        jump dns_redirect
+    }
+
+    chain output_nat {
+        type nat hook output priority -105; policy accept;
+        jump dns_redirect
+    }
+}
+`, tunFwMark, tunFwMask, tunFwMark, tunDevice, tunMarkV4, tunMarkV6,
+		gid, nfprotoOut,
+		gid, dnsPort, dnsRedirectV4, dnsRedirectV6)
+}
+
+func cleanupTunRoutes() {
+	for _, c := range []string{
+		fmt.Sprintf("ip rule del fwmark %s/%s table %d", tunFwMark, tunFwMask, tunTable),
+		fmt.Sprintf("ip route del default dev %s table %d", tunDevice, tunTable),
+		fmt.Sprintf("ip -6 rule del fwmark %s/%s table %d", tunFwMark, tunFwMask, tunTable),
+		fmt.Sprintf("ip -6 route del default dev %s table %d", tunDevice, tunTable),
+	} {
+		_ = runCmd(c)
+	}
+}
+
+
 
 func AddInterfaceIP(cidr string) {
 	set := "interface"
