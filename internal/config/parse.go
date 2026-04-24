@@ -49,6 +49,17 @@ func DetectDNSPort(cfg *SingboxConfig) int {
 	return 0
 }
 
+// DetectMixedPort returns the listen_port of the first inbound with type "mixed".
+// Returns 0 if not found (caller should treat 0 as "not present").
+func DetectMixedPort(cfg *SingboxConfig) int {
+	for _, ib := range cfg.Inbounds {
+		if ib.Type == "mixed" && ib.ListenPort > 0 {
+			return ib.ListenPort
+		}
+	}
+	return 0
+}
+
 // DetectPort returns the listen_port of the first inbound matching the proxy mode.
 // For tun and system_proxy no port is needed, returns 0.
 func DetectPort(cfg *SingboxConfig, mode ProxyMode) (int, error) {
