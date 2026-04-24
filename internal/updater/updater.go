@@ -13,10 +13,8 @@ import (
 var srsFiles = map[string]string{
 	"geoip-cn.srs":                "https://raw.githubusercontent.com/1715173329/IPCIDR-CHINA/refs/heads/rule-set/cn.srs",
 	"geosite-cn.srs":              "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/sing/geo/geosite/cn.srs",
-	"geosite-private.srs":         "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/sing/geo/geosite/private.srs",
 	"geosite-gfw.srs":             "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/sing/geo/geosite/gfw.srs",
 	"geosite-geolocation-!cn.srs": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/sing/geo/geosite/geolocation-!cn.srs",
-	"geoip-private.srs":           "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/sing/geo/geoip/private.srs",
 	"geoip-telegram.srs":          "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/sing/geo/geoip/telegram.srs",
 	"ads.srs":                     "https://raw.githubusercontent.com/privacy-protection-tools/anti-ad.github.io/master/docs/anti-ad-sing-box.srs",
 }
