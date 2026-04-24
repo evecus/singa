@@ -38,6 +38,17 @@ func ParseConfig(path string) (*SingboxConfig, error) {
 	return &cfg, nil
 }
 
+// DetectDNSPort returns the listen_port of the first inbound with type "direct"
+// and tag "dns-in". Returns 0 if not found (caller should keep the default).
+func DetectDNSPort(cfg *SingboxConfig) int {
+	for _, ib := range cfg.Inbounds {
+		if ib.Type == "direct" && ib.Tag == "dns-in" && ib.ListenPort > 0 {
+			return ib.ListenPort
+		}
+	}
+	return 0
+}
+
 // DetectPort returns the listen_port of the first inbound matching the proxy mode.
 // For tun and system_proxy no port is needed, returns 0.
 func DetectPort(cfg *SingboxConfig, mode ProxyMode) (int, error) {
