@@ -15,6 +15,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/singa/internal/updater"
 )
 
 const installPath = "/usr/bin/sing-box"
@@ -256,13 +258,17 @@ func Install(flavor Flavor, proxy, version string) (string, error) {
 		repo = "SagerNet/sing-box"
 	}
 
-	rel, err := fetchRelease(repo, version)
+	// Build ordered mirror list: custom proxy first, then builtins.
+	mirrors := buildMirrors(proxy)
+
+	// fetchRelease with fallback: api.github.com direct first, then proxy-prefixed.
+	rel, err := fetchReleaseWithFallback(repo, version, mirrors)
 	if err != nil {
 		return "", err
 	}
 
-	chosenAsset, downloadURL := pickAsset(rel.Assets, sys.Arch, sys.LibC)
-	if downloadURL == "" {
+	chosenAsset, rawDownloadURL := pickAsset(rel.Assets, sys.Arch, sys.LibC)
+	if rawDownloadURL == "" {
 		var allNames []string
 		for _, a := range rel.Assets {
 			allNames = append(allNames, a.Name)
@@ -271,36 +277,12 @@ func Install(flavor Flavor, proxy, version string) (string, error) {
 			sys.Arch, sys.LibC, rel.TagName, repo, allNames)
 	}
 
-	// Apply proxy prefix
-	if proxy != "" {
-		p := strings.TrimRight(proxy, "/") + "/"
-		downloadURL = p + downloadURL
-	}
-
-	// Download to temp file
-	tmp, err := os.CreateTemp("", "sing-box-*.tar.gz")
+	// Try downloading with fallback mirrors.
+	tmpPath, err := downloadWithFallback(rawDownloadURL, mirrors)
 	if err != nil {
-		return "", err
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Get(downloadURL)
-	if err != nil {
-		tmp.Close()
 		return "", fmt.Errorf("download: %w", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		tmp.Close()
-		return "", fmt.Errorf("download HTTP %d", resp.StatusCode)
-	}
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
-		tmp.Close()
-		return "", err
-	}
-	tmp.Close()
+	defer os.Remove(tmpPath)
 
 	// Extract
 	binPath, err := extractBinary(tmpPath, chosenAsset)
@@ -324,6 +306,109 @@ func Install(flavor Flavor, proxy, version string) (string, error) {
 	_ = os.Chmod(installPath, 0755)
 
 	return rel.TagName, nil
+}
+
+// buildMirrors returns ordered mirror prefixes: custom first, then builtins.
+// Empty string ("") means direct (no prefix).
+func buildMirrors(customProxy string) []string {
+	mirrors := []string{""}	// direct first
+	if customProxy != "" {
+		p := strings.TrimRight(customProxy, "/") + "/"
+		mirrors = append(mirrors, p)
+	}
+	mirrors = append(mirrors, updater.BuiltinMirrors...)
+	return mirrors
+}
+
+// fetchReleaseWithFallback tries api.github.com directly first, then
+// falls back to proxy-prefixed API URLs via each mirror.
+func fetchReleaseWithFallback(repo, tag string, mirrors []string) (*ghRelease, error) {
+	var apiURL string
+	if tag == "" || tag == "latest" {
+		apiURL = fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
+	} else {
+		t := tag
+		if len(t) == 0 || t[0] != 'v' {
+			t = "v" + t
+		}
+		apiURL = fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", repo, t)
+	}
+
+	// Try direct api.github.com first.
+	if rel, err := fetchRelease(repo, tag); err == nil {
+		return rel, nil
+	}
+
+	// Fallback: some mirrors also proxy the GitHub API.
+	var lastErr error
+	for _, m := range mirrors {
+		if m == "" {
+			continue // already tried direct above
+		}
+		u := m + apiURL
+		client := &http.Client{Timeout: 15 * time.Second}
+		resp, err := client.Get(u)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("HTTP %d from %s", resp.StatusCode, m)
+			continue
+		}
+		var rel ghRelease
+		if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+			lastErr = err
+			continue
+		}
+		return &rel, nil
+	}
+	return nil, fmt.Errorf("fetch release info failed (all mirrors tried): %w", lastErr)
+}
+
+// downloadWithFallback tries to download rawURL directly, then with each mirror prefix.
+// Returns the path to a temp file containing the downloaded content.
+func downloadWithFallback(rawURL string, mirrors []string) (string, error) {
+	tmp, err := os.CreateTemp("", "sing-box-*.tar.gz")
+	if err != nil {
+		return "", err
+	}
+	tmpPath := tmp.Name()
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	var lastErr error
+	for _, m := range mirrors {
+		url := rawURL
+		if m != "" {
+			url = m + rawURL
+		}
+		if err := fetchToTemp(client, url, tmp); err != nil {
+			lastErr = err
+			// Truncate for next attempt
+			_ = tmp.Truncate(0)
+			_, _ = tmp.Seek(0, 0)
+			continue
+		}
+		tmp.Close()
+		return tmpPath, nil
+	}
+	tmp.Close()
+	os.Remove(tmpPath)
+	return "", lastErr
+}
+
+func fetchToTemp(client *http.Client, url string, tmp *os.File) error {
+	resp, err := client.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	_, err = io.Copy(tmp, resp.Body)
+	return err
 }
 
 func extractBinary(archivePath, assetName string) (string, error) {
