@@ -444,7 +444,7 @@ const runtimeInfo = computed(() => {
   r['IPv6']   = s.ipv6    ? 'on' : 'off'
   if (s.ports) {
     r['DNS 端口']   = s.ports.dns
-    r['Mixed 端口'] = s.ports.mixed
+    if (s.ports.mixed)  r['Mixed 端口'] = s.ports.mixed
     if (s.proxyMode === 'tproxy')   r['TProxy 端口']   = s.ports.tproxy
     if (s.proxyMode === 'redirect') r['Redirect 端口'] = s.ports.redirect
   }
