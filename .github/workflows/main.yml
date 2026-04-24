@@ -30,7 +30,7 @@ jobs:
             curl -fsSL "${BASE_SITE}/${name}.srs" -o "assets/srs/geosite-${name}.srs"
             echo "Downloaded ${name}.srs ($(wc -c < "assets/srs/geosite-${name}.srs") bytes)"
           done
-          for name in private google facebook telegram twitter netflix; do
+          for name in private telegram; do
             curl -fsSL "${BASE_IP}/${name}.srs" -o "assets/srs/geoip-${name}.srs"
             echo "Downloaded ${name}.srs ($(wc -c < "assets/srs/geoip-${name}.srs") bytes)"
           done
