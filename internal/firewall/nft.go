@@ -114,20 +114,14 @@ func buildTproxyTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
     chain tp_rule {
         meta mark set ct mark
         meta mark & 0xc0 == 0x40 return
-        # Drop multicast and broadcast at the nft level before they enter
-        # sing-box. When lanProxy is on, LAN devices send a constant stream
-        # of LLMNR (224.0.0.252), mDNS (224.0.0.251), SSDP (239.255.255.250)
-        # and broadcast (255.255.255.255) UDP packets. Without this rule they
-        # accumulate as open sing-box connections (visible as 1000+ in the
-        # Clash API) because no reply is ever sent. Returning here lets the
-        # kernel handle or drop them normally without involving sing-box.
-        ip daddr { 224.0.0.0/4, 255.255.255.255 } return
-        ip6 daddr ff00::/8 return
-        # Hardcoded private-range bypass: prevents sing-box's own connections
-        # to 127.x (dns-in, mixed-in, tproxy-in) from being re-captured after
-        # conntrack entries expire (UDP entries expire in ~30s).
-        ip daddr { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10 } return
-        ip6 daddr { ::1, fc00::/7, fe80::/10 } return
+        # Drop multicast/broadcast and bypass all private/reserved ranges at the
+        # nft layer. This prevents sing-box connections to loopback (dns-in,
+        # mixed-in, tproxy-in) from being re-captured after conntrack entries
+        # expire (UDP ~30s) and stops LAN multicast/broadcast spam accumulating
+        # as open connections in sing-box.
+        fib daddr type { local, broadcast, anycast, multicast } return
+        ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.88.99.0/24, 192.168.0.0/16, 198.18.0.0/15, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/3 } return
+        ip6 daddr { ::/127, fc00::/7, fe80::/10, ff00::/8 } return
         ip daddr @interface return
         ip6 daddr @interface6 return
         # DNS (port 53) is handled by nat redirect below, skip here
@@ -208,26 +202,6 @@ func buildRedirectTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
 	}
 
 	return fmt.Sprintf(`table inet singa {
-    set whitelist {
-        type ipv4_addr
-        flags interval
-        auto-merge
-        elements = {
-            0.0.0.0/32, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8,
-            169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24,
-            192.88.99.0/24, 192.168.0.0/16, 198.51.100.0/24,
-            203.0.113.0/24, 224.0.0.0/4, 240.0.0.0/4
-        }
-    }
-    set whitelist6 {
-        type ipv6_addr
-        flags interval
-        auto-merge
-        elements = {
-            ::/128, ::1/128, 64:ff9b::/96, 100::/64,
-            2001::/32, 2001:20::/28, fe80::/10, ff00::/8
-        }
-    }
     set interface {
         type ipv4_addr
         flags interval
@@ -240,14 +214,14 @@ func buildRedirectTable(port int, dnsPort int, ipv6 bool, gid uint32) string {
     }
 
     chain tp_rule {
-        # whitelist already includes 224.0.0.0/4 and 255.255.255.255 via 240.0.0.0/4,
-        # so multicast/broadcast are covered without an explicit rule here.
-        ip daddr @whitelist return
+        # Bypass multicast/broadcast and all private/reserved ranges before
+        # redirecting. Keeps LAN multicast spam and loopback traffic out of
+        # sing-box entirely.
+        fib daddr type { local, broadcast, anycast, multicast } return
+        ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.88.99.0/24, 192.168.0.0/16, 198.18.0.0/15, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/3 } return
+        ip6 daddr { ::/127, fc00::/7, fe80::/10, ff00::/8 } return
         ip daddr @interface return
-        ip6 daddr @whitelist6 return
         ip6 daddr @interface6 return
-        ip daddr { 127.0.0.0/8 } return
-        ip6 daddr { ::1 } return
         skgid %d return
         # skip DNS, handled by dns_redirect chain
         meta l4proto { tcp, udp } th dport 53 return
