@@ -28,8 +28,9 @@ func Apply(mode config.ProxyMode, port int, dnsPort int, lanProxy bool, ipv6 boo
 			return fmt.Errorf("redirect setup: %w", err)
 		}
 	case config.ModeTun:
-		log.Println("firewall: tun mode — rules managed by sing-box")
-		return nil
+		if err := setupTun(dnsPort, lanProxy, ipv6, gid); err != nil {
+			return fmt.Errorf("tun setup: %w", err)
+		}
 	case config.ModeSystemProxy:
 		log.Println("firewall: system_proxy mode — no nftables rules")
 		return nil
