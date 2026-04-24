@@ -319,7 +319,7 @@ func (m *Manager) Start(p StartParams) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
 			Uid:         0,
-			Gid:         0,
+			Gid:         gid,
 			Groups:      []uint32{gid},
 			NoSetGroups: false,
 		},
