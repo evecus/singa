@@ -60,7 +60,7 @@ func BuildConfig(
 				"external_controller": "0.0.0.0:9090",
 				"external_ui": "ui",
 				"external_ui_download_url": "https://ghfast.top/https://github.com/Zephyruso/zashboard/releases/download/v3.5.1/dist-misans-only.zip",
-				"external_ui_download_detour": "直连",
+				"external_ui_download_detour": "direct",
 				"default_mode": "rule",
 			},
 		},
