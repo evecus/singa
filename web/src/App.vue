@@ -156,6 +156,7 @@
         </div>
 
         <div v-if="errorMsg" class="error-bar">⚠ {{ errorMsg }}</div>
+        <div v-if="infoMsg"  class="info-bar">{{ infoMsg }}</div>
 
         <div v-if="isRunning" class="section">
           <div class="section-title">运行状态</div>
@@ -405,6 +406,13 @@ const uploadInfo   = ref(null)
 const status       = ref({ state: 'stopped' })
 const logs         = ref([])
 const errorMsg     = ref('')
+const infoMsg      = ref('')
+let   infoTimer    = null
+function showInfo(msg) {
+  infoMsg.value = msg
+  clearTimeout(infoTimer)
+  infoTimer = setTimeout(() => { infoMsg.value = '' }, 3000)
+}
 const isDragging   = ref(false)
 const showImport   = ref(false)
 const importText   = ref('')
@@ -453,9 +461,9 @@ const runtimeInfo = computed(() => {
 
 const proxyModes = [
   { value: 'tproxy',       icon: '⬡', label: 'tproxy',       desc: 'TCP + UDP' },
-  { value: 'redirect',     icon: '⬢', label: 'redirect',     desc: 'TCP only' },
-  { value: 'tun',          icon: '⬣', label: 'tun',          desc: 'Virtual NIC' },
-  { value: 'system_proxy', icon: '⬟', label: 'system proxy', desc: 'Env/gsettings' },
+  { value: 'redirect',     icon: '⬡', label: 'redirect',     desc: 'TCP only' },
+  { value: 'tun',          icon: '⬡', label: 'tun',          desc: 'Virtual NIC' },
+  { value: 'system_proxy', icon: '⬡', label: 'system proxy', desc: 'Env/gsettings' },
 ]
 const routeModes = [
   { value: 'whitelist', icon: '◐', label: '绕过大陆',    desc: '国内直连，其余代理' },
@@ -534,12 +542,17 @@ async function startCore() {
     })
     await pollStatus()
     startSSE()
+    showInfo('✓ 核心已启动')
   } catch (e) { errorMsg.value = e.message }
 }
 
 async function stopCore() {
-  try { await api('POST', '/stop'); stopSSE(); await pollStatus() }
-  catch (e) { errorMsg.value = e.message }
+  try {
+    await api('POST', '/stop')
+    stopSSE()
+    await pollStatus()
+    showInfo('■ 核心已停止')
+  } catch (e) { errorMsg.value = e.message }
 }
 
 async function pollStatus() {
@@ -837,6 +850,11 @@ body {
   padding: 9px 12px; background: var(--red-bg);
   border: 1px solid #feb2b2; border-radius: var(--radius);
   color: var(--red); font-size: 12px; line-height: 1.5;
+}
+.info-bar {
+  padding: 9px 12px; background: var(--accent-bg);
+  border: 1px solid var(--accent); border-radius: var(--radius);
+  color: var(--accent); font-size: 12px; line-height: 1.5;
 }
 
 .info-grid {
