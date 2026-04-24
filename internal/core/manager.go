@@ -285,6 +285,8 @@ func (m *Manager) Start(p StartParams) error {
 		if dnsPort := config.DetectDNSPort(cfg); dnsPort > 0 {
 			ports.DNS = dnsPort
 		}
+		// Mixed port: use detected value, or 0 if no mixed inbound in uploaded config.
+		ports.Mixed = config.DetectMixedPort(cfg)
 		m.ports = ports
 
 	case "node":
