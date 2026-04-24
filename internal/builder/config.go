@@ -58,6 +58,10 @@ func BuildConfig(
 			},
 			"clash_api": M{
 				"external_controller": "0.0.0.0:9090",
+				"external_ui": "ui",
+				"external_ui_download_url": "https://fastly.jsdelivr.net/gh/evecus/ruleset@ui/zash.zip",
+				"external_ui_download_detour": "直连",
+				"default_mode": "rule",
 			},
 		},
 	}
