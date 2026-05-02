@@ -1,10 +1,10 @@
 <template>
   <div class="app">
     <!-- ── Mobile overlay ──────────────────────────────────────────── -->
-    <div v-if="sidebarOpen" class="sidebar-overlay" @click="sidebarOpen = false"></div>
+    <div v-if="sidebarOpen && !isPublicRoute" class="sidebar-overlay" @click="sidebarOpen = false"></div>
 
     <!-- ── Sidebar ─────────────────────────────────────────────────── -->
-    <aside class="sidebar" :class="{ open: sidebarOpen }">
+    <aside v-if="!isPublicRoute" class="sidebar" :class="{ open: sidebarOpen }">
       <div class="sidebar-brand">
         <div class="brand-logo">S</div>
         <div class="brand-text">
@@ -51,9 +51,9 @@
     </aside>
 
     <!-- ── Main ───────────────────────────────────────────────────── -->
-    <main class="main">
+    <main class="main" :class="{ 'main-full': isPublicRoute }">
       <!-- 移动端悬浮汉堡按钮，叠在各页面 topbar 左侧 -->
-      <button class="hamburger-fab" @click="sidebarOpen = true" aria-label="打开菜单">
+      <button v-if="!isPublicRoute" class="hamburger-fab" @click="sidebarOpen = true" aria-label="打开菜单">
         <span></span><span></span><span></span>
       </button>
       <RouterView />
@@ -63,7 +63,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useStatusStore, useNodesStore, useSubsStore, useLogsStore, useAuthStore } from './stores.js'
 import { api } from './api.js'
 
@@ -73,6 +73,9 @@ const subsStore   = useSubsStore()
 const logsStore   = useLogsStore()
 const authStore   = useAuthStore()
 const router      = useRouter()
+const route       = useRoute()
+
+const isPublicRoute = computed(() => !!route.meta?.public)
 
 const authEnabled = ref(false)
 
