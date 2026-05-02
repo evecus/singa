@@ -5,9 +5,303 @@
     </div>
     <div class="page" style="display:flex;flex-direction:column;gap:16px">
 
-      <!-- ── sing-box 核心 ─────────────────────────────────────────── -->
+      <!-- ── 账号与验证 ──────────────────────────────────────────────── -->
       <div class="card">
-        <div class="card-title">sing-box 核心</div>
+        <div class="card-title">账号与验证</div>
+        <div class="field-hint" style="margin-bottom:12px">
+          开启后，访问 Web 界面需要输入用户名和密码。
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+          <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px">
+            <div class="toggle" :class="{ on: authEnabled }" @click="authEnabled=!authEnabled"></div>
+            <span>启用登录验证（默认开启）</span>
+          </label>
+        </div>
+        <template v-if="authEnabled">
+          <div class="grid-2 gap-3" style="margin-bottom:10px">
+            <div class="field">
+              <label class="field-label">用户名</label>
+              <input class="input" v-model="authUsername" placeholder="admin" />
+            </div>
+            <div class="field">
+              <label class="field-label">新密码（留空则不修改）</label>
+              <input class="input" v-model="authPassword" type="password" placeholder="新密码" autocomplete="new-password" />
+            </div>
+          </div>
+        </template>
+        <div class="flex gap-2">
+          <button class="btn btn-primary" @click="saveAuth">保存</button>
+          <span v-if="authMsg" class="text-xs" :class="authMsg.startsWith('✓') ? 'text-green':'text-red'"
+            style="align-self:center">{{ authMsg }}</span>
+        </div>
+      </div>
+
+      <!-- ── 配置文件（Inbound 端口配置 + Experimental + 日志）────────── -->
+      <div class="card">
+        <div class="card-title">配置文件</div>
+
+        <!-- Inbound 端口配置 -->
+        <div class="section-block">
+          <div class="section-label">Inbound 端口配置</div>
+          <div class="field-hint" style="margin-bottom:12px">
+            各 inbound 监听端口及 TUN 网卡名称。保存后下次启动核心时生效，影响全部配置模式。
+          </div>
+          <div class="grid-2 gap-3" style="margin-bottom:10px">
+            <div class="field">
+              <label class="field-label">DNS 端口（dns-in）</label>
+              <input class="input input-mono" type="number" v-model.number="ib.dnsPort" placeholder="5356" />
+            </div>
+            <div class="field">
+              <label class="field-label">混合代理端口（mixed-in）</label>
+              <input class="input input-mono" type="number" v-model.number="ib.mixedPort" placeholder="2081" />
+            </div>
+            <div class="field">
+              <label class="field-label">Redirect 端口（redirect-in）</label>
+              <input class="input input-mono" type="number" v-model.number="ib.redirectPort" placeholder="7892" />
+            </div>
+            <div class="field">
+              <label class="field-label">TProxy 端口（tproxy-in）</label>
+              <input class="input input-mono" type="number" v-model.number="ib.tproxyPort" placeholder="7893" />
+            </div>
+            <div class="field">
+              <label class="field-label">TUN 网卡名称</label>
+              <input class="input input-mono" v-model="ib.tunInterface" placeholder="singa" />
+            </div>
+            <div class="field">
+              <label class="field-label">TUN 地址（每行一个）</label>
+              <textarea class="textarea input-mono" v-model="ib.tunAddressText" rows="2"
+                placeholder="172.31.0.1/30&#10;fdfe:dcba:9876::1/126"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <!-- Experimental -->
+        <div class="section-block">
+          <div class="section-label">Experimental</div>
+          <div class="field-hint" style="margin-bottom:12px">
+            覆盖全部配置模式的 experimental 块（cache_file + clash_api）。
+          </div>
+
+          <div style="margin-bottom:14px">
+            <div class="field-label" style="margin-bottom:6px">缓存文件</div>
+            <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px;margin-bottom:8px">
+              <div class="toggle" :class="{ on: exp.cacheEnabled }" @click="exp.cacheEnabled=!exp.cacheEnabled"></div>
+              <span>启用缓存</span>
+            </label>
+            <div class="field" v-if="exp.cacheEnabled">
+              <label class="field-label">缓存路径</label>
+              <input class="input input-mono" v-model="exp.cachePath" placeholder="cache.db" />
+            </div>
+          </div>
+
+          <div style="margin-bottom:10px">
+            <div class="field-label" style="margin-bottom:6px">Clash API</div>
+            <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px;margin-bottom:8px">
+              <div class="toggle" :class="{ on: exp.clashAPIEnabled }" @click="exp.clashAPIEnabled=!exp.clashAPIEnabled"></div>
+              <span>启用 Clash API</span>
+            </label>
+            <div v-if="exp.clashAPIEnabled" class="grid-2 gap-3">
+              <div class="field">
+                <label class="field-label">监听地址</label>
+                <input class="input input-mono" v-model="exp.clashAPIListen" placeholder="0.0.0.0:9090" />
+              </div>
+              <div class="field">
+                <label class="field-label">UI 路径</label>
+                <input class="input input-mono" v-model="exp.clashAPIUI" placeholder="ui" />
+              </div>
+              <div class="field">
+                <label class="field-label">UI 下载地址</label>
+                <input class="input input-mono" v-model="exp.clashAPIUIURL"
+                  placeholder="https://fastly.jsdelivr.net/gh/..." />
+              </div>
+              <div class="field">
+                <label class="field-label">下载出站（outbound tag）</label>
+                <input class="input input-mono" v-model="exp.clashAPIDetour" placeholder="direct" />
+              </div>
+              <div class="field">
+                <label class="field-label">默认模式</label>
+                <div class="seg">
+                  <button v-for="m in clashModes" :key="m.v"
+                    class="seg-btn" :class="{ on: exp.clashAPIMode===m.v }"
+                    @click="exp.clashAPIMode=m.v">{{ m.l }}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <!-- 日志 -->
+        <div class="section-block">
+          <div class="section-label">日志</div>
+          <div class="field-hint" style="margin-bottom:12px">
+            覆盖全部配置模式的 log 块。
+          </div>
+          <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px;margin-bottom:10px">
+            <div class="toggle" :class="{ on: !logCfg.disabled }" @click="logCfg.disabled=!logCfg.disabled"></div>
+            <span>启用日志</span>
+          </label>
+          <div v-if="!logCfg.disabled" class="field" style="margin-bottom:10px">
+            <label class="field-label">日志等级</label>
+            <div class="seg">
+              <button v-for="l in logLevels" :key="l"
+                class="seg-btn" :class="{ on: logCfg.level===l }"
+                @click="logCfg.level=l">{{ l }}</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 统一保存按钮 -->
+        <div class="flex gap-2" style="margin-top:4px">
+          <button class="btn btn-ghost btn-sm" @click="saveSingaSettings">保存</button>
+          <span v-if="singaMsg" class="text-xs" :class="singaMsg.startsWith('✓') ? 'text-green':'text-red'"
+            style="align-self:center">{{ singaMsg }}</span>
+        </div>
+      </div>
+
+      <!-- ── 代理配置（原代理模式细化 + 局域网IP过滤）──────────────── -->
+      <div class="card">
+        <div class="card-title">代理配置</div>
+        <div class="field-hint" style="margin-bottom:12px">
+          此处设置将覆盖仪表盘快速选择的代理模式，提供更精细的 TCP/UDP 控制。
+        </div>
+        <div class="grid-2 gap-3">
+          <div class="field">
+            <label class="field-label">TCP 代理模式</label>
+            <div class="seg" style="flex-direction:column;border-radius:var(--radius);overflow:hidden">
+              <button v-for="m in tcpModeOpts" :key="m.v"
+                class="seg-btn" :class="{ on: tcpMode===m.v }"
+                style="border-right:none;border-bottom:1px solid var(--border2);text-align:left;padding:8px 12px"
+                @click="tcpMode=m.v">
+                <span style="font-weight:700">{{ m.l }}</span>
+                <span style="font-size:10px;color:var(--text3);margin-left:6px">{{ m.desc }}</span>
+              </button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label">UDP 代理模式</label>
+            <div class="seg" style="flex-direction:column;border-radius:var(--radius);overflow:hidden">
+              <button v-for="m in udpModeOpts" :key="m.v"
+                class="seg-btn" :class="{ on: udpMode===m.v }"
+                style="border-right:none;border-bottom:1px solid var(--border2);text-align:left;padding:8px 12px"
+                @click="udpMode=m.v">
+                <span style="font-weight:700">{{ m.l }}</span>
+                <span style="font-size:10px;color:var(--text3);margin-left:6px">{{ m.desc }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="alert alert-info mt-3 text-xs">
+          当前组合模式：<strong>{{ resolvedProxyMode }}</strong>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+          <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px">
+            <div class="toggle" :class="{ on: lanProxy }" @click="lanProxy=!lanProxy"></div>
+            <span>局域网代理</span>
+          </label>
+          <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px">
+            <div class="toggle" :class="{ on: ipv6 }" @click="ipv6=!ipv6"></div>
+            <span>IPv6 支持</span>
+          </label>
+          <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px">
+            <div class="toggle" :class="{ on: bypassCN }" @click="bypassCN=!bypassCN"></div>
+            <span>绕过中国大陆流量</span>
+            <span class="field-hint" style="margin:0">（直连中国大陆 IP，不经过 sing-box 核心）</span>
+          </label>
+        </div>
+        <button class="btn btn-ghost btn-sm mt-2" @click="saveProxyMode">保存偏好</button>
+        <div v-if="proxyModeMsg" class="alert alert-success mt-2 text-xs">{{ proxyModeMsg }}</div>
+
+        <div class="section-divider"></div>
+
+        <!-- 局域网 IP 过滤（内嵌卡片） -->
+        <div class="inner-card">
+          <div class="inner-card-title">局域网 IP 过滤</div>
+          <div class="field-hint" style="margin-bottom:10px">
+            仅在开启局域网代理时生效。
+          </div>
+          <div class="mode-grid mode-grid-sm" style="margin-bottom:10px">
+            <div v-for="m in ipfModes" :key="m.v"
+              class="mode-card mode-card-sm" :class="{ on: ipfMode===m.v }"
+              @click="ipfMode=m.v">
+              <div class="mode-card-icon">{{ m.icon }}</div>
+              <div class="mode-card-name">{{ m.name }}</div>
+              <div class="mode-card-desc">{{ m.desc }}</div>
+            </div>
+          </div>
+          <div class="field" style="margin-bottom:8px">
+            <label class="field-label">IP 列表（空格或换行分隔，支持 CIDR）</label>
+            <textarea class="textarea" v-model="ipfIPs" rows="2"
+              :disabled="ipfMode==='off'"
+              placeholder="192.168.1.0/24 10.0.0.100"></textarea>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-ghost btn-sm" @click="saveIPFilter">保存</button>
+            <span v-if="ipfMsg" class="text-xs" :class="ipfMsg.startsWith('✓') ? 'text-green':'text-red'"
+              style="align-self:center">{{ ipfMsg }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── sing-box 运行配置（定时重启 + 运行目录）──────────────────── -->
+      <div class="card">
+        <div class="card-title">sing-box 运行配置</div>
+
+        <!-- 定时重启核心 -->
+        <div class="section-block">
+          <div class="section-label">定时重启核心</div>
+          <div class="field-hint" style="margin-bottom:12px">
+            按照 Cron 表达式定期重启 sing-box 核心（仅在核心运行时生效）。
+          </div>
+          <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px;margin-bottom:12px">
+            <div class="toggle" :class="{ on: schedEnabled }" @click="schedEnabled=!schedEnabled"></div>
+            <span>启用定时重启</span>
+          </label>
+          <div v-if="schedEnabled" class="field" style="margin-bottom:12px">
+            <label class="field-label">Cron 表达式（5 字段，分 时 日 月 周）</label>
+            <input class="input input-mono" v-model="schedCron"
+              placeholder="例如: 15 3 * * *（每天凌晨 3:15）" />
+            <div class="field-hint">
+              示例：<code>15 3 * * *</code>（每天3:15）&nbsp;
+              <code>0 */6 * * *</code>（每6小时）&nbsp;
+              <code>30 8 * * 1</code>（每周一8:30）
+            </div>
+            <div v-if="schedCronError" class="alert alert-error mt-2">{{ schedCronError }}</div>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-ghost btn-sm" @click="saveSched">保存</button>
+            <span v-if="schedMsg" class="text-xs" :class="schedMsg.startsWith('✓') ? 'text-green':'text-red'"
+              style="align-self:center">{{ schedMsg }}</span>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <!-- sing-box 运行目录 -->
+        <div class="section-block">
+          <div class="section-label">sing-box 运行目录</div>
+          <div class="field-hint" style="margin-bottom:12px">
+            设置 <code>sing-box run -D &lt;路径&gt;</code> 的工作目录（留空则使用默认目录）。
+          </div>
+          <div class="field" style="margin-bottom:12px">
+            <label class="field-label">工作目录路径</label>
+            <input class="input input-mono" v-model="singboxWorkDir"
+              placeholder="留空使用默认路径（data/run）" />
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-ghost btn-sm" @click="saveWorkDir">保存</button>
+            <span v-if="workDirMsg" class="text-xs" :class="workDirMsg.startsWith('✓') ? 'text-green':'text-red'"
+              style="align-self:center">{{ workDirMsg }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── sing-box 核心管理 ─────────────────────────────────────────── -->
+      <div class="card">
+        <div class="card-title">sing-box 核心管理</div>
         <div class="info-table" style="margin-bottom:12px">
           <span class="info-k">已安装版本</span>
           <span class="info-v">{{ sbInfo.version || '未安装' }}</span>
@@ -65,292 +359,6 @@
             <span class="monospace flex-1">{{ r.file }}</span>
             <span class="text-muted">{{ r.error || r.mirror }}</span>
           </div>
-        </div>
-      </div>
-
-      <!-- ── 代理模式细化 ───────────────────────────────────────────── -->
-      <div class="card">
-        <div class="card-title">代理模式细化</div>
-        <div class="field-hint" style="margin-bottom:12px">
-          此处设置将覆盖仪表盘快速选择的代理模式，提供更精细的 TCP/UDP 控制。
-        </div>
-        <div class="grid-2 gap-3">
-          <div class="field">
-            <label class="field-label">TCP 代理模式</label>
-            <div class="seg" style="flex-direction:column;border-radius:var(--radius);overflow:hidden">
-              <button v-for="m in tcpModeOpts" :key="m.v"
-                class="seg-btn" :class="{ on: tcpMode===m.v }"
-                style="border-right:none;border-bottom:1px solid var(--border2);text-align:left;padding:8px 12px"
-                @click="tcpMode=m.v">
-                <span style="font-weight:700">{{ m.l }}</span>
-                <span style="font-size:10px;color:var(--text3);margin-left:6px">{{ m.desc }}</span>
-              </button>
-            </div>
-          </div>
-          <div class="field">
-            <label class="field-label">UDP 代理模式</label>
-            <div class="seg" style="flex-direction:column;border-radius:var(--radius);overflow:hidden">
-              <button v-for="m in udpModeOpts" :key="m.v"
-                class="seg-btn" :class="{ on: udpMode===m.v }"
-                style="border-right:none;border-bottom:1px solid var(--border2);text-align:left;padding:8px 12px"
-                @click="udpMode=m.v">
-                <span style="font-weight:700">{{ m.l }}</span>
-                <span style="font-size:10px;color:var(--text3);margin-left:6px">{{ m.desc }}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-        <div class="alert alert-info mt-3 text-xs">
-          当前组合模式：<strong>{{ resolvedProxyMode }}</strong>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
-          <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px">
-            <div class="toggle" :class="{ on: lanProxy }" @click="lanProxy=!lanProxy"></div>
-            <span>局域网代理</span>
-          </label>
-          <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px">
-            <div class="toggle" :class="{ on: ipv6 }" @click="ipv6=!ipv6"></div>
-            <span>IPv6 支持</span>
-          </label>
-          <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px">
-            <div class="toggle" :class="{ on: bypassCN }" @click="bypassCN=!bypassCN"></div>
-            <span>绕过中国大陆流量</span>
-            <span class="field-hint" style="margin:0">（直连中国大陆 IP，不经过 sing-box 核心）</span>
-          </label>
-        </div>
-        <button class="btn btn-ghost btn-sm mt-2" @click="saveProxyMode">保存偏好</button>
-        <div v-if="proxyModeMsg" class="alert alert-success mt-2 text-xs">{{ proxyModeMsg }}</div>
-      </div>
-
-      <!-- ── Inbound 端口配置 ──────────────────────────────────────── -->
-      <div class="card">
-        <div class="card-title">Inbound 端口配置</div>
-        <div class="field-hint" style="margin-bottom:12px">
-          各 inbound 监听端口及 TUN 网卡名称。保存后下次启动核心时生效，影响全部配置模式。
-        </div>
-        <div class="grid-2 gap-3" style="margin-bottom:10px">
-          <div class="field">
-            <label class="field-label">DNS 端口（dns-in）</label>
-            <input class="input input-mono" type="number" v-model.number="ib.dnsPort" placeholder="5356" />
-          </div>
-          <div class="field">
-            <label class="field-label">混合代理端口（mixed-in）</label>
-            <input class="input input-mono" type="number" v-model.number="ib.mixedPort" placeholder="2081" />
-          </div>
-          <div class="field">
-            <label class="field-label">Redirect 端口（redirect-in）</label>
-            <input class="input input-mono" type="number" v-model.number="ib.redirectPort" placeholder="7892" />
-          </div>
-          <div class="field">
-            <label class="field-label">TProxy 端口（tproxy-in）</label>
-            <input class="input input-mono" type="number" v-model.number="ib.tproxyPort" placeholder="7893" />
-          </div>
-          <div class="field">
-            <label class="field-label">TUN 网卡名称</label>
-            <input class="input input-mono" v-model="ib.tunInterface" placeholder="singa" />
-          </div>
-          <div class="field">
-            <label class="field-label">TUN 地址（每行一个）</label>
-            <textarea class="textarea input-mono" v-model="ib.tunAddressText" rows="2"
-              placeholder="172.31.0.1/30&#10;fdfe:dcba:9876::1/126"></textarea>
-          </div>
-        </div>
-        <div class="flex gap-2">
-          <button class="btn btn-ghost btn-sm" @click="saveSingaSettings">保存</button>
-          <span v-if="singaMsg" class="text-xs" :class="singaMsg.startsWith('✓') ? 'text-green':'text-red'"
-            style="align-self:center">{{ singaMsg }}</span>
-        </div>
-      </div>
-
-      <!-- ── Experimental ──────────────────────────────────────────────── -->
-      <div class="card">
-        <div class="card-title">Experimental</div>
-        <div class="field-hint" style="margin-bottom:12px">
-          覆盖全部配置模式的 experimental 块（cache_file + clash_api）。
-        </div>
-
-        <div style="margin-bottom:14px">
-          <div class="field-label" style="margin-bottom:6px">缓存文件</div>
-          <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px;margin-bottom:8px">
-            <div class="toggle" :class="{ on: exp.cacheEnabled }" @click="exp.cacheEnabled=!exp.cacheEnabled"></div>
-            <span>启用缓存</span>
-          </label>
-          <div class="field" v-if="exp.cacheEnabled">
-            <label class="field-label">缓存路径</label>
-            <input class="input input-mono" v-model="exp.cachePath" placeholder="cache.db" />
-          </div>
-        </div>
-
-        <div style="margin-bottom:10px">
-          <div class="field-label" style="margin-bottom:6px">Clash API</div>
-          <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px;margin-bottom:8px">
-            <div class="toggle" :class="{ on: exp.clashAPIEnabled }" @click="exp.clashAPIEnabled=!exp.clashAPIEnabled"></div>
-            <span>启用 Clash API</span>
-          </label>
-          <div v-if="exp.clashAPIEnabled" class="grid-2 gap-3">
-            <div class="field">
-              <label class="field-label">监听地址</label>
-              <input class="input input-mono" v-model="exp.clashAPIListen" placeholder="0.0.0.0:9090" />
-            </div>
-            <div class="field">
-              <label class="field-label">UI 路径</label>
-              <input class="input input-mono" v-model="exp.clashAPIUI" placeholder="ui" />
-            </div>
-            <div class="field">
-              <label class="field-label">UI 下载地址</label>
-              <input class="input input-mono" v-model="exp.clashAPIUIURL"
-                placeholder="https://fastly.jsdelivr.net/gh/..." />
-            </div>
-            <div class="field">
-              <label class="field-label">下载出站（outbound tag）</label>
-              <input class="input input-mono" v-model="exp.clashAPIDetour" placeholder="direct" />
-            </div>
-            <div class="field">
-              <label class="field-label">默认模式</label>
-              <div class="seg">
-                <button v-for="m in clashModes" :key="m.v"
-                  class="seg-btn" :class="{ on: exp.clashAPIMode===m.v }"
-                  @click="exp.clashAPIMode=m.v">{{ m.l }}</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="flex gap-2">
-          <button class="btn btn-ghost btn-sm" @click="saveSingaSettings">保存</button>
-          <span v-if="singaMsg" class="text-xs" :class="singaMsg.startsWith('✓') ? 'text-green':'text-red'"
-            style="align-self:center">{{ singaMsg }}</span>
-        </div>
-      </div>
-
-      <!-- ── 日志 ──────────────────────────────────────────────────────── -->
-      <div class="card">
-        <div class="card-title">日志</div>
-        <div class="field-hint" style="margin-bottom:12px">
-          覆盖全部配置模式的 log 块。
-        </div>
-        <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px;margin-bottom:10px">
-          <div class="toggle" :class="{ on: !logCfg.disabled }" @click="logCfg.disabled=!logCfg.disabled"></div>
-          <span>启用日志</span>
-        </label>
-        <div v-if="!logCfg.disabled" class="field" style="margin-bottom:10px">
-          <label class="field-label">日志等级</label>
-          <div class="seg">
-            <button v-for="l in logLevels" :key="l"
-              class="seg-btn" :class="{ on: logCfg.level===l }"
-              @click="logCfg.level=l">{{ l }}</button>
-          </div>
-        </div>
-        <div class="flex gap-2">
-          <button class="btn btn-ghost btn-sm" @click="saveSingaSettings">保存</button>
-          <span v-if="singaMsg" class="text-xs" :class="singaMsg.startsWith('✓') ? 'text-green':'text-red'"
-            style="align-self:center">{{ singaMsg }}</span>
-        </div>
-      </div>
-
-      <!-- ── 局域网 IP 过滤 ─────────────────────────────────────────── -->
-      <div class="card">
-        <div class="card-title">局域网 IP 过滤</div>
-        <div class="field-hint" style="margin-bottom:12px">
-          仅在开启局域网代理时生效。
-        </div>
-        <div class="mode-grid" style="margin-bottom:10px">
-          <div v-for="m in ipfModes" :key="m.v"
-            class="mode-card" :class="{ on: ipfMode===m.v }"
-            @click="ipfMode=m.v">
-            <div class="mode-card-icon">{{ m.icon }}</div>
-            <div class="mode-card-name">{{ m.name }}</div>
-            <div class="mode-card-desc">{{ m.desc }}</div>
-          </div>
-        </div>
-        <div class="field" style="margin-bottom:10px">
-          <label class="field-label">IP 列表（空格或换行分隔，支持 CIDR）</label>
-          <textarea class="textarea" v-model="ipfIPs" rows="3"
-            :disabled="ipfMode==='off'"
-            placeholder="192.168.1.0/24 10.0.0.100"></textarea>
-        </div>
-        <div class="flex gap-2">
-          <button class="btn btn-primary" @click="saveIPFilter">保存</button>
-          <span v-if="ipfMsg" class="text-xs" :class="ipfMsg.startsWith('✓') ? 'text-green':'text-red'"
-            style="align-self:center">{{ ipfMsg }}</span>
-        </div>
-      </div>
-
-
-      <!-- ── 账号与验证 ──────────────────────────────────────────────── -->
-      <div class="card">
-        <div class="card-title">账号与验证</div>
-        <div class="field-hint" style="margin-bottom:12px">
-          开启后，访问 Web 界面需要输入用户名和密码。
-        </div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
-          <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px">
-            <div class="toggle" :class="{ on: authEnabled }" @click="authEnabled=!authEnabled"></div>
-            <span>启用登录验证（默认开启）</span>
-          </label>
-        </div>
-        <template v-if="authEnabled">
-          <div class="grid-2 gap-3" style="margin-bottom:10px">
-            <div class="field">
-              <label class="field-label">用户名</label>
-              <input class="input" v-model="authUsername" placeholder="admin" />
-            </div>
-            <div class="field">
-              <label class="field-label">新密码（留空则不修改）</label>
-              <input class="input" v-model="authPassword" type="password" placeholder="新密码" autocomplete="new-password" />
-            </div>
-          </div>
-        </template>
-        <div class="flex gap-2">
-          <button class="btn btn-primary" @click="saveAuth">保存</button>
-          <span v-if="authMsg" class="text-xs" :class="authMsg.startsWith('✓') ? 'text-green':'text-red'"
-            style="align-self:center">{{ authMsg }}</span>
-        </div>
-      </div>
-
-      <!-- ── 定时重启 ───────────────────────────────────────────────── -->
-      <div class="card">
-        <div class="card-title">定时重启核心</div>
-        <div class="field-hint" style="margin-bottom:12px">
-          按照 Cron 表达式定期重启 sing-box 核心（仅在核心运行时生效）。
-        </div>
-        <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px;margin-bottom:12px">
-          <div class="toggle" :class="{ on: schedEnabled }" @click="schedEnabled=!schedEnabled"></div>
-          <span>启用定时重启</span>
-        </label>
-        <div v-if="schedEnabled" class="field" style="margin-bottom:12px">
-          <label class="field-label">Cron 表达式（5 字段，分 时 日 月 周）</label>
-          <input class="input input-mono" v-model="schedCron"
-            placeholder="例如: 15 3 * * *（每天凌晨 3:15）" />
-          <div class="field-hint">
-            示例：<code>15 3 * * *</code>（每天3:15）&nbsp;
-            <code>0 */6 * * *</code>（每6小时）&nbsp;
-            <code>30 8 * * 1</code>（每周一8:30）
-          </div>
-          <div v-if="schedCronError" class="alert alert-error mt-2">{{ schedCronError }}</div>
-        </div>
-        <div class="flex gap-2">
-          <button class="btn btn-primary" @click="saveSched">保存</button>
-          <span v-if="schedMsg" class="text-xs" :class="schedMsg.startsWith('✓') ? 'text-green':'text-red'"
-            style="align-self:center">{{ schedMsg }}</span>
-        </div>
-      </div>
-
-      <!-- ── sing-box 运行目录 ──────────────────────────────────────── -->
-      <div class="card">
-        <div class="card-title">sing-box 运行目录</div>
-        <div class="field-hint" style="margin-bottom:12px">
-          设置 <code>sing-box run -D &lt;路径&gt;</code> 的工作目录（留空则使用默认目录）。
-        </div>
-        <div class="field" style="margin-bottom:12px">
-          <label class="field-label">工作目录路径</label>
-          <input class="input input-mono" v-model="singboxWorkDir"
-            placeholder="留空使用默认路径（data/run）" />
-        </div>
-        <div class="flex gap-2">
-          <button class="btn btn-primary" @click="saveWorkDir">保存</button>
-          <span v-if="workDirMsg" class="text-xs" :class="workDirMsg.startsWith('✓') ? 'text-green':'text-red'"
-            style="align-self:center">{{ workDirMsg }}</span>
         </div>
       </div>
 
@@ -620,7 +628,6 @@ async function saveAuth() {
     authMsg.value = '✓ 已保存'
     authPassword.value = ''
     if (!authEnabled.value) {
-      // Update token to noauth if disabled
       localStorage.setItem('singa_token', 'noauth')
     }
   } catch (e) {
@@ -712,7 +719,59 @@ onMounted(() => {
 </script>
 
 <style scoped>
-@media (max-width: 640px) {
-  /* grid-2 already goes single column via global style */
+/* 大块内的小节分隔线 */
+.section-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
+}
+
+/* 小节标题（大写灰色） */
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 10px;
+}
+
+/* 内嵌小卡片（局域网IP过滤） */
+.inner-card {
+  background: var(--bg2, rgba(0,0,0,0.04));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-top: 4px;
+}
+
+.inner-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text1);
+  margin-bottom: 6px;
+}
+
+/* 紧凑版 mode-grid（IP过滤用） */
+.mode-grid-sm {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.mode-card-sm {
+  padding: 6px 8px !important;
+}
+
+.mode-card-sm .mode-card-icon {
+  font-size: 14px !important;
+}
+
+.mode-card-sm .mode-card-name {
+  font-size: 12px !important;
+}
+
+.mode-card-sm .mode-card-desc {
+  font-size: 10px !important;
 }
 </style>
