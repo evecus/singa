@@ -217,25 +217,23 @@
 
         <div class="section-divider"></div>
 
-        <!-- 局域网 IP 过滤（内嵌卡片） -->
-        <div class="inner-card">
-          <div class="inner-card-title">局域网 IP 过滤</div>
+        <!-- 局域网 IP 过滤 -->
+        <div class="section-block">
+          <div class="section-label">局域网 IP 过滤</div>
           <div class="field-hint" style="margin-bottom:10px">
             仅在开启局域网代理时生效。
           </div>
-          <div class="mode-grid mode-grid-sm" style="margin-bottom:10px">
-            <div v-for="m in ipfModes" :key="m.v"
-              class="mode-card mode-card-sm" :class="{ on: ipfMode===m.v }"
+          <div class="seg" style="margin-bottom:10px">
+            <button v-for="m in ipfModes" :key="m.v"
+              class="seg-btn" :class="{ on: ipfMode===m.v }"
               @click="ipfMode=m.v">
-              <div class="mode-card-icon">{{ m.icon }}</div>
-              <div class="mode-card-name">{{ m.name }}</div>
-              <div class="mode-card-desc">{{ m.desc }}</div>
-            </div>
+              {{ m.icon }} {{ m.name }}
+              <span style="font-size:10px;color:var(--text3);margin-left:4px">{{ m.desc }}</span>
+            </button>
           </div>
           <div class="field" style="margin-bottom:8px">
             <label class="field-label">IP 列表（空格或换行分隔，支持 CIDR）</label>
             <textarea class="textarea" v-model="ipfIPs" rows="2"
-              :disabled="ipfMode==='off'"
               placeholder="192.168.1.0/24 10.0.0.100"></textarea>
           </div>
           <div class="flex gap-2">
@@ -736,42 +734,5 @@ onMounted(() => {
   margin-bottom: 10px;
 }
 
-/* 内嵌小卡片（局域网IP过滤） */
-.inner-card {
-  background: var(--bg2, rgba(0,0,0,0.04));
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
-  margin-top: 4px;
-}
 
-.inner-card-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text1);
-  margin-bottom: 6px;
-}
-
-/* 紧凑版 mode-grid（IP过滤用） */
-.mode-grid-sm {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-}
-
-.mode-card-sm {
-  padding: 6px 8px !important;
-}
-
-.mode-card-sm .mode-card-icon {
-  font-size: 14px !important;
-}
-
-.mode-card-sm .mode-card-name {
-  font-size: 12px !important;
-}
-
-.mode-card-sm .mode-card-desc {
-  font-size: 10px !important;
-}
 </style>
