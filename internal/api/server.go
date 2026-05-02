@@ -11,10 +11,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/singa/internal/auth"
 	"github.com/singa/internal/builder"
 	"github.com/singa/internal/config"
 	"github.com/singa/internal/core"
@@ -40,14 +42,23 @@ var errorOnlyFormatter gin.LogFormatter = func(param gin.LogFormatterParams) str
 }
 
 type Server struct {
-	manager *core.Manager
-	dataDir string
-	srsDir  string
-	webFS   embed.FS
+	manager  *core.Manager
+	dataDir  string
+	srsDir   string
+	webFS    embed.FS
+	// sessionTokens maps token -> true (in-memory; cleared on restart)
+	sessionMu     sync.RWMutex
+	sessionTokens map[string]bool
 }
 
 func NewServer(m *core.Manager, dataDir string, srsDir string, webFS embed.FS) *Server {
-	return &Server{manager: m, dataDir: dataDir, srsDir: srsDir, webFS: webFS}
+	return &Server{
+		manager:       m,
+		dataDir:       dataDir,
+		srsDir:        srsDir,
+		webFS:         webFS,
+		sessionTokens: map[string]bool{},
+	}
 }
 
 func (s *Server) Run(addr string) error {
@@ -59,46 +70,57 @@ func (s *Server) Run(addr string) error {
 
 	a := r.Group("/api")
 	{
-		a.POST("/config", s.uploadConfig)
-		a.GET("/config/info", s.configInfo)
-		a.GET("/nodes", s.listNodes)
-		a.POST("/nodes/import", s.importNodes)
-		a.DELETE("/nodes/:id", s.deleteNode)
-		a.POST("/start", s.start)
-		a.POST("/stop", s.stop)
-		a.GET("/status", s.status)
-		a.GET("/logs", s.streamLogs)
-		a.POST("/update-rules", s.updateRules)
+		// Auth endpoints (public - no middleware)
+		a.POST("/auth/login", s.authLogin)
+		a.POST("/auth/logout", s.authLogout)
+		a.GET("/auth/status", s.authStatus)
+		a.POST("/auth/setup", s.authSetup)
+
+		// Protected routes - require auth
+		protected := a.Group("", s.authMiddleware)
+		{
+			protected.POST("/config", s.uploadConfig)
+			protected.GET("/config/info", s.configInfo)
+			protected.GET("/nodes", s.listNodes)
+			protected.POST("/nodes/import", s.importNodes)
+			protected.DELETE("/nodes/:id", s.deleteNode)
+			protected.POST("/start", s.start)
+			protected.POST("/stop", s.stop)
+			protected.GET("/status", s.status)
+			protected.GET("/logs", s.streamLogs)
+			protected.POST("/update-rules", s.updateRules)
 		// Subscriptions
-		a.GET("/subscriptions", s.listSubscriptions)
-		a.POST("/subscriptions", s.addSubscription)
-		a.DELETE("/subscriptions/:id", s.deleteSubscription)
-		a.PATCH("/subscriptions/:id", s.updateSubscriptionMeta)
-		a.POST("/subscriptions/:id/update", s.updateSubscription)
-		a.GET("/subscriptions/:id/proxies", s.getSubscriptionProxies)
-		a.DELETE("/subscriptions/:id/proxies/:idx", s.deleteSubscriptionProxy)
+			protected.GET("/subscriptions", s.listSubscriptions)
+			protected.POST("/subscriptions", s.addSubscription)
+			protected.DELETE("/subscriptions/:id", s.deleteSubscription)
+			protected.PATCH("/subscriptions/:id", s.updateSubscriptionMeta)
+			protected.POST("/subscriptions/:id/update", s.updateSubscription)
+			protected.GET("/subscriptions/:id/proxies", s.getSubscriptionProxies)
+			protected.DELETE("/subscriptions/:id/proxies/:idx", s.deleteSubscriptionProxy)
 		// Profiles (independent of subscriptions)
-		a.GET("/profiles", s.listProfiles)
-		a.POST("/profiles", s.addProfile)
-		a.PATCH("/profiles/:id", s.updateProfile)
-		a.DELETE("/profiles/:id", s.deleteProfile)
+			protected.GET("/profiles", s.listProfiles)
+			protected.POST("/profiles", s.addProfile)
+			protected.PATCH("/profiles/:id", s.updateProfile)
+			protected.DELETE("/profiles/:id", s.deleteProfile)
 		// Settings
-		a.GET("/singbox/version", s.singboxVersion)
-		a.POST("/singbox/install", s.singboxInstall)
-		a.GET("/system-info", s.systemInfo)
-		a.GET("/ip-filter", s.getIPFilter)
-		a.POST("/ip-filter", s.saveIPFilter)
-		a.GET("/proxy-settings", s.getProxySettings)
-		a.POST("/proxy-settings", s.saveProxySettings)
-		a.GET("/singa-settings", s.getSingaSettings)
-		a.POST("/singa-settings", s.saveSingaSettings)
+			protected.GET("/singbox/version", s.singboxVersion)
+			protected.POST("/singbox/install", s.singboxInstall)
+			protected.GET("/system-info", s.systemInfo)
+			protected.GET("/ip-filter", s.getIPFilter)
+			protected.POST("/ip-filter", s.saveIPFilter)
+			protected.GET("/proxy-settings", s.getProxySettings)
+			protected.POST("/proxy-settings", s.saveProxySettings)
+			protected.GET("/singa-settings", s.getSingaSettings)
+			protected.POST("/singa-settings", s.saveSingaSettingsWithAuth)
 		// Rulesets
-		a.GET("/rulesets", s.listRulesets)
-		a.DELETE("/rulesets/:file", s.deleteRuleset)
-		a.POST("/rulesets/download", s.downloadRuleset)
-		a.GET("/rulesets/fetch-hub", s.fetchRulesetHub)
+			protected.GET("/rulesets", s.listRulesets)
+			protected.DELETE("/rulesets/:file", s.deleteRuleset)
+			protected.POST("/rulesets/download", s.downloadRuleset)
+			protected.GET("/rulesets/fetch-hub", s.fetchRulesetHub)
 		// Config
-		a.GET("/config/raw", s.rawConfig)
+			protected.GET("/config/raw", s.rawConfig)
+			protected.POST("/profiles/validate", s.validateProfile)
+		}
 	}
 
 	dist, err := fs.Sub(s.webFS, "web/dist")
@@ -730,4 +752,177 @@ func (s *Server) rawConfig(c *gin.Context) {
 		return
 	}
 	c.Data(200, "application/json; charset=utf-8", data)
+}
+
+// ── Auth handlers ──────────────────────────────────────────────────────────
+
+func (s *Server) authMiddleware(c *gin.Context) {
+	ss := s.manager.GetSingaSettings()
+	if !ss.Auth.Enabled {
+		c.Next()
+		return
+	}
+	token := c.GetHeader("X-Auth-Token")
+	if token == "" {
+		// Also accept cookie
+		token, _ = c.Cookie("singa_token")
+	}
+	s.sessionMu.RLock()
+	ok := s.sessionTokens[token]
+	s.sessionMu.RUnlock()
+	if !ok {
+		c.AbortWithStatusJSON(401, gin.H{"error": "unauthorized"})
+		return
+	}
+	c.Next()
+}
+
+// authStatus returns whether auth is enabled and whether setup is needed.
+func (s *Server) authStatus(c *gin.Context) {
+	ss := s.manager.GetSingaSettings()
+	needsSetup := ss.Auth.Enabled && ss.Auth.PasswordHash == ""
+	c.JSON(200, gin.H{
+		"enabled":    ss.Auth.Enabled,
+		"needsSetup": needsSetup,
+	})
+}
+
+// authSetup creates the initial account (only if no password is set yet).
+func (s *Server) authSetup(c *gin.Context) {
+	ss := s.manager.GetSingaSettings()
+	if ss.Auth.PasswordHash != "" {
+		c.JSON(400, gin.H{"error": "account already configured; use settings to change credentials"})
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Username == "" || req.Password == "" {
+		c.JSON(400, gin.H{"error": "username and password required"})
+		return
+	}
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	ss.Auth.Username = req.Username
+	ss.Auth.PasswordHash = hash
+	ss.Auth.Enabled = true
+	if err := s.manager.SaveSingaSettings(ss); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	// Issue a session token
+	token := auth.GenerateToken()
+	s.sessionMu.Lock()
+	s.sessionTokens[token] = true
+	s.sessionMu.Unlock()
+	c.JSON(200, gin.H{"ok": true, "token": token})
+}
+
+func (s *Server) authLogin(c *gin.Context) {
+	ss := s.manager.GetSingaSettings()
+	if !ss.Auth.Enabled {
+		// Auth disabled — return a dummy token
+		c.JSON(200, gin.H{"ok": true, "token": "noauth"})
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"error": "invalid request"})
+		return
+	}
+	if req.Username != ss.Auth.Username || !auth.CheckPassword(ss.Auth.PasswordHash, req.Password) {
+		c.JSON(401, gin.H{"error": "invalid username or password"})
+		return
+	}
+	token := auth.GenerateToken()
+	s.sessionMu.Lock()
+	s.sessionTokens[token] = true
+	s.sessionMu.Unlock()
+	c.JSON(200, gin.H{"ok": true, "token": token})
+}
+
+func (s *Server) authLogout(c *gin.Context) {
+	token := c.GetHeader("X-Auth-Token")
+	if token == "" {
+		token, _ = c.Cookie("singa_token")
+	}
+	s.sessionMu.Lock()
+	delete(s.sessionTokens, token)
+	s.sessionMu.Unlock()
+	c.JSON(200, gin.H{"ok": true})
+}
+
+// saveSingaSettings is overridden to handle auth changes (password hashing).
+// We patch it to handle auth updates with raw password.
+func (s *Server) saveSingaSettingsWithAuth(c *gin.Context) {
+	// Accept full SingaSettings but treat auth.password specially
+	var raw map[string]interface{}
+	if err := c.ShouldBindJSON(&raw); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	current := s.manager.GetSingaSettings()
+
+	// Parse into SingaSettings via JSON round-trip
+	data, _ := jsonMarshal(raw)
+	var ss core.SingaSettings
+	_ = jsonUnmarshal(data, &ss)
+
+	// Keep existing hash unless a new plaintext password is provided
+	if authMap, ok := raw["auth"].(map[string]interface{}); ok {
+		if pw, ok := authMap["newPassword"].(string); ok && pw != "" {
+			hash, err := auth.HashPassword(pw)
+			if err != nil {
+				c.JSON(500, gin.H{"error": err.Error()})
+				return
+			}
+			ss.Auth.PasswordHash = hash
+		} else {
+			ss.Auth.PasswordHash = current.Auth.PasswordHash
+		}
+	} else {
+		ss.Auth.PasswordHash = current.Auth.PasswordHash
+	}
+
+	if err := s.manager.SaveSingaSettings(ss); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	// Restart scheduler if cron changed
+	s.manager.RestartSchedulerIfNeeded()
+	c.JSON(200, gin.H{"ok": true})
+}
+
+func jsonMarshal(v interface{}) ([]byte, error) {
+	return json.Marshal(v)
+}
+
+func jsonUnmarshal(data []byte, v interface{}) error {
+	return json.Unmarshal(data, v)
+}
+
+// ── Profile validation ──────────────────────────────────────────────────────
+
+func (s *Server) validateProfile(c *gin.Context) {
+	var req struct {
+		WizardConfig json.RawMessage `json:"wizardConfig"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.WizardConfig) == 0 {
+		c.JSON(400, gin.H{"error": "wizardConfig required"})
+		return
+	}
+	errs := builder.ValidateWizardConfig(req.WizardConfig)
+	if len(errs) == 0 {
+		c.JSON(200, gin.H{"ok": true, "errors": []interface{}{}})
+	} else {
+		c.JSON(200, gin.H{"ok": false, "errors": errs})
+	}
 }

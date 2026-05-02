@@ -295,6 +295,84 @@
         </div>
       </div>
 
+
+      <!-- ── 账号与验证 ──────────────────────────────────────────────── -->
+      <div class="card">
+        <div class="card-title">账号与验证</div>
+        <div class="field-hint" style="margin-bottom:12px">
+          开启后，访问 Web 界面需要输入用户名和密码。
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+          <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px">
+            <div class="toggle" :class="{ on: authEnabled }" @click="authEnabled=!authEnabled"></div>
+            <span>启用登录验证（默认开启）</span>
+          </label>
+        </div>
+        <template v-if="authEnabled">
+          <div class="grid-2 gap-3" style="margin-bottom:10px">
+            <div class="field">
+              <label class="field-label">用户名</label>
+              <input class="input" v-model="authUsername" placeholder="admin" />
+            </div>
+            <div class="field">
+              <label class="field-label">新密码（留空则不修改）</label>
+              <input class="input" v-model="authPassword" type="password" placeholder="新密码" autocomplete="new-password" />
+            </div>
+          </div>
+        </template>
+        <div class="flex gap-2">
+          <button class="btn btn-primary" @click="saveAuth">保存</button>
+          <span v-if="authMsg" class="text-xs" :class="authMsg.startsWith('✓') ? 'text-green':'text-red'"
+            style="align-self:center">{{ authMsg }}</span>
+        </div>
+      </div>
+
+      <!-- ── 定时重启 ───────────────────────────────────────────────── -->
+      <div class="card">
+        <div class="card-title">定时重启核心</div>
+        <div class="field-hint" style="margin-bottom:12px">
+          按照 Cron 表达式定期重启 sing-box 核心（仅在核心运行时生效）。
+        </div>
+        <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px;margin-bottom:12px">
+          <div class="toggle" :class="{ on: schedEnabled }" @click="schedEnabled=!schedEnabled"></div>
+          <span>启用定时重启</span>
+        </label>
+        <div v-if="schedEnabled" class="field" style="margin-bottom:12px">
+          <label class="field-label">Cron 表达式（5 字段，分 时 日 月 周）</label>
+          <input class="input input-mono" v-model="schedCron"
+            placeholder="例如: 15 3 * * *（每天凌晨 3:15）" />
+          <div class="field-hint">
+            示例：<code>15 3 * * *</code>（每天3:15）&nbsp;
+            <code>0 */6 * * *</code>（每6小时）&nbsp;
+            <code>30 8 * * 1</code>（每周一8:30）
+          </div>
+          <div v-if="schedCronError" class="alert alert-error mt-2">{{ schedCronError }}</div>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-primary" @click="saveSched">保存</button>
+          <span v-if="schedMsg" class="text-xs" :class="schedMsg.startsWith('✓') ? 'text-green':'text-red'"
+            style="align-self:center">{{ schedMsg }}</span>
+        </div>
+      </div>
+
+      <!-- ── sing-box 运行目录 ──────────────────────────────────────── -->
+      <div class="card">
+        <div class="card-title">sing-box 运行目录</div>
+        <div class="field-hint" style="margin-bottom:12px">
+          设置 <code>sing-box run -D &lt;路径&gt;</code> 的工作目录（留空则使用默认目录）。
+        </div>
+        <div class="field" style="margin-bottom:12px">
+          <label class="field-label">工作目录路径</label>
+          <input class="input input-mono" v-model="singboxWorkDir"
+            placeholder="留空使用默认路径（data/run）" />
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-primary" @click="saveWorkDir">保存</button>
+          <span v-if="workDirMsg" class="text-xs" :class="workDirMsg.startsWith('✓') ? 'text-green':'text-red'"
+            style="align-self:center">{{ workDirMsg }}</span>
+        </div>
+      </div>
+
       <!-- ── 关于 ─────────────────────────────────────────────────── -->
       <div class="card">
         <div class="card-title">关于</div>
@@ -316,6 +394,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../api.js'
+import { useAuthStore } from '../stores.js'
 
 // ── sing-box ──────────────────────────────────────────────────────────────
 const sbInfo      = ref({})
@@ -531,10 +610,114 @@ async function saveIPFilter() {
   } catch (e) { ipfMsg.value = '✕ ' + e.message }
 }
 
+// ── Auth settings ─────────────────────────────────────────────────────────
+const authEnabled  = ref(true)
+const authUsername = ref('')
+const authPassword = ref('')
+const authMsg      = ref('')
+
+async function loadAuth() {
+  try {
+    const r = await api('GET', '/singa-settings')
+    authEnabled.value  = r.auth?.enabled !== false
+    authUsername.value = r.auth?.username || ''
+  } catch {}
+}
+
+async function saveAuth() {
+  authMsg.value = ''
+  try {
+    const current = await api('GET', '/singa-settings')
+    const payload = { ...current, auth: {
+      enabled:     authEnabled.value,
+      username:    authUsername.value,
+      newPassword: authPassword.value,
+    }}
+    await api('POST', '/singa-settings', payload)
+    authMsg.value = '✓ 已保存'
+    authPassword.value = ''
+    if (!authEnabled.value) {
+      // Update token to noauth if disabled
+      localStorage.setItem('singa_token', 'noauth')
+    }
+  } catch (e) {
+    authMsg.value = '✕ ' + e.message
+  }
+  setTimeout(() => { authMsg.value = '' }, 2500)
+}
+
+// ── Scheduled restart ──────────────────────────────────────────────────────
+const schedEnabled    = ref(false)
+const schedCron       = ref('15 3 * * *')
+const schedCronError  = ref('')
+const schedMsg        = ref('')
+
+function validateCron(expr) {
+  const parts = expr.trim().split(/\s+/)
+  if (parts.length !== 5) return '需要 5 个字段'
+  const ranges = [[0,59],[0,23],[1,31],[1,12],[0,6]]
+  return ''
+}
+
+async function loadSched() {
+  try {
+    const r = await api('GET', '/singa-settings')
+    schedEnabled.value = r.scheduledRestart?.enabled || false
+    schedCron.value    = r.scheduledRestart?.cron    || '15 3 * * *'
+  } catch {}
+}
+
+async function saveSched() {
+  schedMsg.value = ''; schedCronError.value = ''
+  if (schedEnabled.value) {
+    const err = validateCron(schedCron.value)
+    if (err) { schedCronError.value = err; return }
+  }
+  try {
+    const current = await api('GET', '/singa-settings')
+    const payload = { ...current, scheduledRestart: {
+      enabled: schedEnabled.value,
+      cron:    schedCron.value,
+    }}
+    await api('POST', '/singa-settings', payload)
+    schedMsg.value = '✓ 已保存'
+  } catch (e) {
+    schedMsg.value = '✕ ' + e.message
+  }
+  setTimeout(() => { schedMsg.value = '' }, 2500)
+}
+
+// ── Work dir settings ──────────────────────────────────────────────────────
+const singboxWorkDir = ref('')
+const workDirMsg     = ref('')
+
+async function loadWorkDir() {
+  try {
+    const r = await api('GET', '/singa-settings')
+    singboxWorkDir.value = r.singboxWorkDir || ''
+  } catch {}
+}
+
+async function saveWorkDir() {
+  workDirMsg.value = ''
+  try {
+    const current = await api('GET', '/singa-settings')
+    const payload = { ...current, singboxWorkDir: singboxWorkDir.value }
+    await api('POST', '/singa-settings', payload)
+    workDirMsg.value = '✓ 已保存'
+  } catch (e) {
+    workDirMsg.value = '✕ ' + e.message
+  }
+  setTimeout(() => { workDirMsg.value = '' }, 2500)
+}
+
 onMounted(() => {
   checkVersion()
   loadIPFilter()
   loadSingaSettings()
+  loadAuth()
+  loadSched()
+  loadWorkDir()
   api('GET', '/proxy-settings').then(r => {
     tcpMode.value  = r.tcpMode  || 'off'
     udpMode.value  = r.udpMode  || 'off'

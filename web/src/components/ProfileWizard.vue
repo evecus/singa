@@ -746,6 +746,8 @@ const props = defineProps({
   subs:    { type: Array,  default: () => [] },
 })
 const emit  = defineEmits(['close', 'saved'])
+const saveErrors = ref([])
+const savingValidationMsg = ref('')
 
 const profilesStore = useProfilesStore()
 const rsStore    = useRulesetsStore()
@@ -1302,13 +1304,35 @@ function nextStep() {
 // ── Save ───────────────────────────────────────────────────────────────────
 async function save() {
   if (!form.name.trim()) { step.value = 0; return }
-  saving.value = true
+  saving.value = true; saveErrors.value = []
   try {
     const wizardConfig = JSON.parse(JSON.stringify({
       outbounds: form.outbounds,
       route:     form.route,
       dns:       form.dns,
     }))
+
+    // Validate before saving
+    try {
+      const { api } = await import('../api.js')
+      const vRes = await api('POST', '/profiles/validate', { wizardConfig })
+      if (!vRes.ok && vRes.errors?.length) {
+        saveErrors.value = vRes.errors
+        // Ask user if they want to save anyway
+        const proceed = confirm(
+          '⚠ 配置验证发现以下错误：
+
+' +
+          vRes.errors.map(e => `• [${e.location}] ${e.message}`).join('
+') +
+          '
+
+是否仍然保存？（建议修正后再保存）'
+        )
+        if (!proceed) { saving.value = false; return }
+      }
+    } catch {}
+
     let prof
     if (props.profile) {
       prof = await profilesStore.updateMeta(props.profile.id, {

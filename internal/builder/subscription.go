@@ -890,3 +890,149 @@ func parseUsers(text string) []M {
 	}
 	return users
 }
+
+// ── ValidateWizardConfig: tag reference validation ─────────────────────────
+
+// ValidationError describes a single reference error.
+type ValidationError struct {
+	Location string `json:"location"`
+	Message  string `json:"message"`
+}
+
+// ValidateWizardConfig checks that every tag/ID reference in the wizard config
+// points to something that actually exists. Returns a list of errors (empty = OK).
+func ValidateWizardConfig(wizardRaw json.RawMessage) []ValidationError {
+	var wc WizardConfig
+	if err := json.Unmarshal(wizardRaw, &wc); err != nil {
+		return []ValidationError{{Location: "root", Message: "invalid JSON: " + err.Error()}}
+	}
+
+	obIdx := buildObIndex(&wc)    // id -> tag for outbounds
+	rsIdx := buildRSIndex(&wc)    // id -> tag for rulesets
+	dnsSrvIdx := buildDNSSrvIndex(&wc) // id -> tag for DNS servers
+	// Also build tag sets for direct lookup
+	obTags := map[string]bool{"direct": true, "block": true}
+	for _, ob := range wc.Outbounds {
+		obTags[ob.Tag] = true
+	}
+	rsTags := map[string]bool{}
+	for _, rs := range wc.Route.RuleSet {
+		rsTags[rs.Tag] = true
+	}
+	dnsSrvTags := map[string]bool{}
+	for _, s := range wc.DNS.Servers {
+		dnsSrvTags[s.Tag] = true
+	}
+
+	var errs []ValidationError
+
+	resolveOb := func(ref WizardOutboundRef, loc string) {
+		if ref.Type == "Subscription" || ref.Type == "Subscribe" {
+			return // subscription refs are validated at runtime
+		}
+		// Check by ID first, then by tag
+		if ref.ID != "" {
+			if _, ok := obIdx[ref.ID]; !ok {
+				errs = append(errs, ValidationError{
+					Location: loc,
+					Message:  "引用了不存在的出站 ID: " + ref.ID,
+				})
+			}
+			return
+		}
+		if ref.Tag != "" {
+			if !obTags[ref.Tag] {
+				errs = append(errs, ValidationError{
+					Location: loc,
+					Message:  "引用了不存在的出站 tag: " + ref.Tag,
+				})
+			}
+		}
+	}
+
+	// Validate outbound internal references
+	for i, ob := range wc.Outbounds {
+		for j, ref := range ob.Outbounds {
+			resolveOb(ref, fmt.Sprintf("outbound[%d](%s).outbounds[%d]", i, ob.Tag, j))
+		}
+	}
+
+	// Validate route.final
+	if f := wc.Route.Final; f != "" {
+		if !obTags[f] {
+			// try resolve by checking obIdx values
+			found := false
+			for _, t := range obIdx {
+				if t == f {
+					found = true
+					break
+				}
+			}
+			if !found {
+				errs = append(errs, ValidationError{
+					Location: "route.final",
+					Message:  "引用了不存在的出站 tag: " + f,
+				})
+			}
+		}
+	}
+
+	// Validate route rules
+	for i, rule := range wc.Route.Rules {
+		if rule.Type == "InsertionPoint" {
+			continue
+		}
+		if rule.Outbound != "" && !obTags[rule.Outbound] {
+			// Try lookup by ID
+			if _, ok := obIdx[rule.Outbound]; !ok {
+				errs = append(errs, ValidationError{
+					Location: fmt.Sprintf("route.rules[%d]", i),
+					Message:  "outbound 引用了不存在的 tag/ID: " + rule.Outbound,
+				})
+			}
+		}
+		// route rules reference server (DNS) for DNS action rules
+		if rule.Server != "" && !dnsSrvTags[rule.Server] {
+			if _, ok := dnsSrvIdx[rule.Server]; !ok {
+				errs = append(errs, ValidationError{
+					Location: fmt.Sprintf("route.rules[%d]", i),
+					Message:  "server 引用了不存在的 DNS 服务器 tag/ID: " + rule.Server,
+				})
+			}
+		}
+	}
+
+	// Validate DNS rules
+	for i, dr := range wc.DNS.Rules {
+		if dr.Server != "" && !dnsSrvTags[dr.Server] {
+			if _, ok := dnsSrvIdx[dr.Server]; !ok {
+				errs = append(errs, ValidationError{
+					Location: fmt.Sprintf("dns.rules[%d]", i),
+					Message:  "server 引用了不存在的 DNS 服务器 tag/ID: " + dr.Server,
+				})
+			}
+		}
+		if dr.Outbound != "" && !obTags[dr.Outbound] {
+			if _, ok := obIdx[dr.Outbound]; !ok {
+				errs = append(errs, ValidationError{
+					Location: fmt.Sprintf("dns.rules[%d]", i),
+					Message:  "outbound 引用了不存在的 tag/ID: " + dr.Outbound,
+				})
+			}
+		}
+	}
+
+	// Validate route.default_domain_resolver
+	if r := wc.Route.DefaultDomainResolver; r != "" {
+		if !dnsSrvTags[r] {
+			if _, ok := dnsSrvIdx[r]; !ok {
+				errs = append(errs, ValidationError{
+					Location: "route.default_domain_resolver",
+					Message:  "引用了不存在的 DNS 服务器 tag/ID: " + r,
+				})
+			}
+		}
+	}
+
+	return errs
+}

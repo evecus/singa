@@ -1,13 +1,32 @@
 package core
 
-// SingaSettings is the unified persistent settings structure that controls
-// inbound ports/names, experimental (cache_file + clash_api), and log.
-// Saved to data/singa_settings.json and applied to every config file before
-// sing-box is started, regardless of config mode (node/subscription/upload).
+// SingaSettings is the unified persistent settings structure.
+// Saved to data/singa_settings.json.
 type SingaSettings struct {
 	Inbound      InboundSettings      `json:"inbound"`
 	Experimental ExperimentalSettings `json:"experimental"`
 	Log          LogSettings          `json:"log"`
+	// Auth settings
+	Auth AuthSettings `json:"auth"`
+	// Scheduled restart: cron expression (e.g. "15 3 * * *"), empty = disabled.
+	// Only effective when core is running.
+	ScheduledRestart ScheduledRestartSettings `json:"scheduledRestart"`
+	// Custom sing-box working directory for "run -D <path>".
+	// Empty = use default runDir.
+	SingboxWorkDir string `json:"singboxWorkDir"`
+}
+
+// AuthSettings controls login authentication for the web UI.
+type AuthSettings struct {
+	Enabled      bool   `json:"enabled"`      // default true
+	Username     string `json:"username"`
+	PasswordHash string `json:"passwordHash"` // bcrypt hash
+}
+
+// ScheduledRestartSettings controls periodic restart of the sing-box core.
+type ScheduledRestartSettings struct {
+	Enabled  bool   `json:"enabled"`
+	Cron     string `json:"cron"` // standard 5-field cron, e.g. "15 3 * * *"
 }
 
 // InboundSettings controls the ports and interface names used when singa
@@ -60,6 +79,13 @@ func DefaultSingaSettings() SingaSettings {
 			Disabled: true,
 			Level:    "warn",
 		},
+		Auth: AuthSettings{
+			Enabled: true,
+		},
+		ScheduledRestart: ScheduledRestartSettings{
+			Enabled: false,
+			Cron:    "15 3 * * *",
+		},
 	}
 }
 
@@ -89,6 +115,9 @@ func (ss SingaSettings) Filled() SingaSettings {
 	}
 	if ss.Log.Level == "" {
 		ss.Log.Level = d.Log.Level
+	}
+	if ss.ScheduledRestart.Cron == "" {
+		ss.ScheduledRestart.Cron = d.ScheduledRestart.Cron
 	}
 	return ss
 }

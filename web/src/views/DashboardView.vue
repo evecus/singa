@@ -310,15 +310,32 @@ const currentProxyModeLabel = computed(() => {
   return '系统代理'
 })
 
+// Persist dashboard params to localStorage
+function loadPersistedParams() {
+  try {
+    const saved = localStorage.getItem('singa_dashboard_params')
+    if (saved) return JSON.parse(saved)
+  } catch {}
+  return null
+}
+function savePersistedParams(p) {
+  localStorage.setItem('singa_dashboard_params', JSON.stringify(p))
+}
+
+const _savedParams = loadPersistedParams()
 const params = reactive({
-  configMode: 'node',
-  nodeId: '',
-  subscriptionId: '',
-  subNodeIdx: -1,
-  profileId: '',
-  routeMode: 'whitelist',
-  blockAds: true,
+  configMode:     _savedParams?.configMode     || 'node',
+  nodeId:         _savedParams?.nodeId         || '',
+  subscriptionId: _savedParams?.subscriptionId || '',
+  subNodeIdx:     _savedParams?.subNodeIdx     ?? -1,
+  profileId:      _savedParams?.profileId      || '',
+  routeMode:      _savedParams?.routeMode      || 'whitelist',
+  blockAds:       _savedParams?.blockAds       ?? true,
 })
+
+// Watch and persist
+// persist params
+watch(() => ({ ...params }), (v) => savePersistedParams(v), { deep: true })
 
 const canStart = computed(() => {
   if (params.configMode === 'node') return !!params.nodeId
@@ -428,10 +445,32 @@ onMounted(async () => {
   profilesStore.load()
   nodesStore.load()
   subsStore.load()
-  // Pre-fill from saved status
-  if (status.value.configMode) params.configMode = status.value.configMode
-  if (status.value.nodeId)     params.nodeId     = status.value.nodeId
-  if (status.value.routeMode)  params.routeMode  = status.value.routeMode
+  // Restore labels for persisted params
+  if (params.configMode === 'profile' && params.profileId) {
+    await profilesStore.load()
+    const prof = profilesStore.profiles.find(p => p.id === params.profileId)
+    if (prof) selectedProfileLabel.value = '📄 ' + prof.name
+  } else if (params.configMode === 'upload') {
+    selectedProfileLabel.value = '📁 已上传的 JSON 配置'
+  } else if (params.configMode === 'node' && params.nodeId) {
+    await nodesStore.load()
+    const n = nodesStore.nodes.find(n => n.id === params.nodeId)
+    if (n) selectedNodeLabel.value = `[${n.type}] ${n.name}`
+  } else if (params.configMode === 'subnode' && params.subscriptionId) {
+    await subsStore.load()
+    const sub = subsStore.subs.find(s => s.id === params.subscriptionId)
+    if (sub) {
+      try {
+        const proxies = await subsStore.getProxies(params.subscriptionId)
+        subProxyCache[params.subscriptionId] = proxies
+        const proxy = proxies[params.subNodeIdx]
+        if (proxy) {
+          const name = proxy.name || proxy.tag || ('节点' + (params.subNodeIdx + 1))
+          selectedNodeLabel.value = `[${proxy.type}] ${name}`
+        }
+      } catch {}
+    }
+  }
   clockTimer = setInterval(() => {
     now.value = new Date().toLocaleTimeString('zh-CN')
   }, 1000)

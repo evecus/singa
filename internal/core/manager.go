@@ -25,6 +25,7 @@ import (
 	"github.com/singa/internal/subscription"
 	"github.com/singa/internal/profile"
 	"github.com/singa/internal/sysproxy"
+	"github.com/singa/internal/cronrestart"
 )
 
 const singboxBin = "/usr/bin/sing-box"
@@ -125,6 +126,9 @@ type Manager struct {
 	logMu   sync.RWMutex
 	logBuf  []string
 	logSubs []chan string
+
+	// scheduler
+	schedStop chan struct{}
 }
 
 func NewManager(dataDir, runDir, srsDir string) *Manager {
@@ -408,7 +412,16 @@ func (m *Manager) Start(p StartParams) error {
 		return fmt.Errorf("firewall: %w", err)
 	}
 
-	cmd := exec.Command(singboxBin, "run", "-D", m.runDir)
+	// Determine working directory for sing-box
+	effectiveRunDir := m.runDir
+	if ss.SingboxWorkDir != "" {
+		effectiveRunDir = ss.SingboxWorkDir
+		if err := os.MkdirAll(effectiveRunDir, 0755); err != nil {
+			return fmt.Errorf("create workdir: %w", err)
+		}
+	}
+
+	cmd := exec.Command(singboxBin, "run", "-D", effectiveRunDir)
 	cmd.Dir = m.runDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
@@ -432,6 +445,9 @@ func (m *Manager) Start(p StartParams) error {
 	m.params = p
 	m.activeProxySettings = ps
 	m.saveState(true)
+
+	// Start scheduled restart
+	m.startScheduler()
 
 	// System proxy: only when both TCP and UDP are "off" (no transparent proxy).
 	if ps.isSystemProxyOnly() {
@@ -495,6 +511,7 @@ func (m *Manager) Stop() {
 	m.state = StateStopped
 	m.cmd = nil
 	m.saveState(false)
+	m.stopScheduler()
 }
 
 // ── Config preparation ─────────────────────────────────────────────────────
@@ -757,6 +774,70 @@ func copyFile(src, dst string) error {
 	defer out.Close()
 	_, err = io.Copy(out, in)
 	return err
+}
+
+
+// ── Scheduler ──────────────────────────────────────────────────────────────
+
+func (m *Manager) startScheduler() {
+	m.stopScheduler() // stop any previous
+	ss := m.loadSingaSettings()
+	if !ss.ScheduledRestart.Enabled || ss.ScheduledRestart.Cron == "" {
+		return
+	}
+	entry, err := cronrestart.Parse(ss.ScheduledRestart.Cron)
+	if err != nil {
+		log.Printf("singa: invalid cron %q: %v", ss.ScheduledRestart.Cron, err)
+		return
+	}
+	stop := make(chan struct{})
+	m.schedStop = stop
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		lastFired := time.Time{}
+		for {
+			select {
+			case <-stop:
+				return
+			case t := <-ticker.C:
+				rounded := t.Truncate(time.Minute)
+				if entry.Matches(rounded) && rounded.After(lastFired) {
+					lastFired = rounded
+					m.mu.Lock()
+					running := m.state == StateRunning
+					params := m.params
+					m.mu.Unlock()
+					if running {
+						log.Printf("singa: scheduled restart triggered by cron %q", ss.ScheduledRestart.Cron)
+						m.Stop()
+						if err := m.Start(params); err != nil {
+							log.Printf("singa: scheduled restart failed: %v", err)
+						}
+					}
+				}
+			}
+		}
+	}()
+}
+
+func (m *Manager) stopScheduler() {
+	if m.schedStop != nil {
+		close(m.schedStop)
+		m.schedStop = nil
+	}
+}
+
+// RestartSchedulerIfNeeded restarts the scheduler (called after settings change).
+func (m *Manager) RestartSchedulerIfNeeded() {
+	m.mu.Lock()
+	running := m.state == StateRunning
+	m.mu.Unlock()
+	if running {
+		m.startScheduler()
+	} else {
+		m.stopScheduler()
+	}
 }
 
 func (m *Manager) RecoverState() {

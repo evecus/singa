@@ -38,6 +38,10 @@
                 </div>
               </div>
               <div class="ml-auto flex gap-2">
+                <button class="btn btn-ghost btn-sm" @click="validateProfile(prof)"
+                  :disabled="!prof.wizardConfig || validating===prof.id">
+                  {{ validating===prof.id ? '验证中…' : '✓ 验证' }}
+                </button>
                 <button class="btn btn-ghost btn-sm" @click="openWizard(prof)">
                   ✎ 编辑配置
                 </button>
@@ -52,6 +56,20 @@
             <div v-else class="alert alert-warn text-xs">
               尚未完成向导，点击「编辑配置」继续
             </div>
+            <!-- Validation results -->
+            <template v-if="validationResults[prof.id]">
+              <div v-if="validationResults[prof.id].ok" class="alert alert-success text-xs mt-2">
+                ✓ 配置验证通过，所有引用均有效
+              </div>
+              <div v-else class="alert alert-error mt-2">
+                <div class="text-xs font-bold mb-1">⚠ 配置存在引用错误：</div>
+                <div v-for="(e,i) in validationResults[prof.id].errors" :key="i"
+                  class="text-xs" style="margin-top:3px">
+                  <code style="background:rgba(0,0,0,.1);padding:0 4px;border-radius:3px">{{ e.location }}</code>
+                  {{ e.message }}
+                </div>
+              </div>
+            </template>
           </div>
 
         </div>
@@ -156,6 +174,8 @@ async function viewConfigJson() {
 // ── Generate / wizard ─────────────────────────────────────────────────────
 const showWizard    = ref(false)
 const editingProfile = ref(null)
+const validating = ref('')  // profile id being validated
+const validationResults = ref({})  // { [profId]: { ok, errors } }
 
 function openWizard(prof) {
   editingProfile.value = prof
@@ -165,6 +185,26 @@ function openWizard(prof) {
 async function onWizardSaved(prof) {
   showWizard.value = false
   await profilesStore.load()
+  // Auto-validate after saving
+  const saved = profilesStore.profiles.find(p => p.id === (prof?.id || editingProfile.value?.id))
+  if (saved?.wizardConfig) {
+    await validateProfile(saved)
+  }
+}
+
+async function validateProfile(prof) {
+  if (!prof.wizardConfig) return
+  validating.value = prof.id
+  try {
+    const res = await api('POST', '/profiles/validate', { wizardConfig: prof.wizardConfig })
+    validationResults.value = { ...validationResults.value, [prof.id]: res }
+  } catch (e) {
+    validationResults.value = { ...validationResults.value, [prof.id]: {
+      ok: false, errors: [{ location: 'network', message: e.message }]
+    }}
+  } finally {
+    validating.value = ''
+  }
 }
 
 async function deleteProfile(id) {

@@ -2,6 +2,25 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { api } from './api.js'
 
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+export const useAuthStore = defineStore('auth', () => {
+  const token = ref(localStorage.getItem('singa_token') || '')
+
+  function setToken(t) {
+    token.value = t
+    if (t) localStorage.setItem('singa_token', t)
+    else localStorage.removeItem('singa_token')
+  }
+
+  async function logout() {
+    try { await api('POST', '/auth/logout') } catch {}
+    setToken('')
+  }
+
+  return { token, setToken, logout }
+})
+
 // ── Status ──────────────────────────────────────────────────────────────────
 export const useStatusStore = defineStore('status', () => {
   const status = ref({ state: 'stopped', pid: 0, ports: {} })

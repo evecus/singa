@@ -44,6 +44,9 @@
             {{ statusStore.status.pid }}
           </span>
         </div>
+        <button v-if="authEnabled" class="nav-item" style="width:100%;margin-top:4px;color:var(--text3);font-size:12px" @click="doLogout">
+          <span class="nav-icon" style="font-size:13px">⎋</span><span>退出登录</span>
+        </button>
       </div>
     </aside>
 
@@ -60,12 +63,32 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useStatusStore, useNodesStore, useSubsStore, useLogsStore } from './stores.js'
+import { useRouter } from 'vue-router'
+import { useStatusStore, useNodesStore, useSubsStore, useLogsStore, useAuthStore } from './stores.js'
+import { api } from './api.js'
 
 const statusStore = useStatusStore()
 const nodesStore  = useNodesStore()
 const subsStore   = useSubsStore()
 const logsStore   = useLogsStore()
+const authStore   = useAuthStore()
+const router      = useRouter()
+
+const authEnabled = ref(false)
+
+async function checkAuthEnabled() {
+  try {
+    const s = await fetch('/api/auth/status')
+    const d = await s.json()
+    authEnabled.value = d.enabled
+  } catch {}
+}
+
+async function doLogout() {
+  try { await api('POST', '/auth/logout') } catch {}
+  authStore.setToken('')
+  router.push('/login')
+}
 
 const appVer = '2.0'
 const sidebarOpen = ref(false)
@@ -80,6 +103,7 @@ const totalNodes = computed(() =>
 
 let poll = null
 onMounted(async () => {
+  checkAuthEnabled()
   await statusStore.fetch()
   await Promise.all([nodesStore.load(), subsStore.load()])
   if (statusStore.isRunning) logsStore.startSSE()
