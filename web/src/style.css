@@ -149,6 +149,7 @@ body {
 
 /* ── Main content ───────────────────────────────────────────────────────── */
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+.main-full { margin-left: 0 !important; }
 .topbar {
   height: var(--topbar-h); flex-shrink: 0;
   background: var(--surface); border-bottom: 1px solid var(--border);
