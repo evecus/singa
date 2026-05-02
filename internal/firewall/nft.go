@@ -36,8 +36,8 @@ const privateRangesV6 = "        ip6 daddr { ::/127, fc00::/7, fe80::/10, ff00::
 
 // setup applies nft rules and ip routes for the given modes.
 // tunDevice is the user-configured TUN interface name (e.g. "singa", "tun0").
-func setup(modes config.ProxyModes, ports Ports, lanProxy bool, ipv6 bool, tunDevice string, gid uint32, ipf ipfilter.Config) error {
-	conf := buildTable(modes, ports, lanProxy, ipv6, tunDevice, gid, ipf)
+func setup(modes config.ProxyModes, ports Ports, lanProxy bool, ipv6 bool, bypassCN bool, tunDevice string, gid uint32, ipf ipfilter.Config) error {
+	conf := buildTable(modes, ports, lanProxy, ipv6, bypassCN, tunDevice, gid, ipf)
 	if err := os.WriteFile(nftConfPath, []byte(conf), 0644); err != nil {
 		return fmt.Errorf("write nft conf: %w", err)
 	}
@@ -49,7 +49,23 @@ func setup(modes config.ProxyModes, ports Ports, lanProxy bool, ipv6 bool, tunDe
 			log.Printf("firewall: ip_forward: %v", err)
 		}
 	}
-	return runCmd("nft -f " + nftConfPath)
+	if err := runCmd("nft -f " + nftConfPath); err != nil {
+		return err
+	}
+	// Load CN bypass set after main table is set up
+	if bypassCN {
+		cnNftPath := filepath.Join(filepath.Dir(nftConfPath), "cn-bypass.nft")
+		if _, err := os.Stat(cnNftPath); err == nil {
+			if err := runCmd("nft -f " + cnNftPath); err != nil {
+				log.Printf("firewall: cn-bypass load: %v", err)
+			} else {
+				log.Println("firewall: CN bypass rules loaded")
+			}
+		} else {
+			log.Printf("firewall: cn-bypass.nft not found at %s", cnNftPath)
+		}
+	}
+	return nil
 }
 
 // setupRoutes installs ip rule / ip route for active transparent modes.
@@ -124,7 +140,7 @@ func buildIPFilterNft(ipf ipfilter.Config, lanProxy bool) (setDef string, ruleSn
 
 // ── Main table builder ─────────────────────────────────────────────────────
 
-func buildTable(modes config.ProxyModes, ports Ports, lanProxy bool, ipv6 bool, tunDevice string, gid uint32, ipf ipfilter.Config) string {
+func buildTable(modes config.ProxyModes, ports Ports, lanProxy bool, ipv6 bool, bypassCN bool, tunDevice string, gid uint32, ipf ipfilter.Config) string {
 	ipfSetDef, ipfRule := buildIPFilterNft(ipf, lanProxy)
 	var s strings.Builder
 
@@ -154,7 +170,7 @@ func buildTable(modes config.ProxyModes, ports Ports, lanProxy bool, ipv6 bool, 
 `, tunFwMark))
 	}
 
-	s.WriteString(buildProxyRuleChain(modes, ipfRule, ipv6))
+	s.WriteString(buildProxyRuleChain(modes, ipfRule, ipv6, bypassCN))
 	s.WriteString(buildManglePrerouting(modes, ports, lanProxy, ipv6, tunDevice))
 	s.WriteString(buildMangleOutput(modes, ipv6, gid))
 
@@ -177,7 +193,7 @@ func buildTable(modes config.ProxyModes, ports Ports, lanProxy bool, ipv6 bool, 
 
 // ── proxy_rule chain ───────────────────────────────────────────────────────
 
-func buildProxyRuleChain(modes config.ProxyModes, ipfRule string, ipv6 bool) string {
+func buildProxyRuleChain(modes config.ProxyModes, ipfRule string, ipv6 bool, bypassCN bool) string {
 	var s strings.Builder
 	s.WriteString("\n    chain proxy_rule {\n")
 
@@ -202,6 +218,14 @@ func buildProxyRuleChain(modes config.ProxyModes, ipfRule string, ipv6 bool) str
 
 	if ipfRule != "" {
 		s.WriteString(ipfRule)
+	}
+
+	// CN bypass: skip proxying traffic to China mainland IPs
+	if bypassCN {
+		s.WriteString("        ip daddr @cn_bypass return\n")
+		if ipv6 {
+			s.WriteString("        ip6 daddr @cn_bypass6 return\n")
+		}
 	}
 
 	switch modes.TCP {
