@@ -12,7 +12,6 @@ import (
 
 	"github.com/singa/internal/api"
 	"github.com/singa/internal/core"
-	"github.com/singa/internal/firewall"
 )
 
 //go:embed web/dist
@@ -27,7 +26,7 @@ func main() {
 		portFlag int
 	)
 	flag.StringVar(&dirFlag, "dir", "", "data directory (default: <exe-dir>/data)")
-	flag.IntVar(&portFlag, "port", 0, "web UI port (default: 8080)")
+	flag.IntVar(&portFlag, "port", 0, "web UI port (default: 7777)")
 	flag.Parse()
 
 	exe, err := os.Executable()
@@ -45,7 +44,7 @@ func main() {
 		dataDir = abs
 	}
 
-	listen := ":8080"
+	listen := ":7777"
 	if portFlag != 0 {
 		listen = fmt.Sprintf(":%d", portFlag)
 	}
@@ -53,8 +52,10 @@ func main() {
 	runDir := filepath.Join(dataDir, "run")
 	srsDir := filepath.Join(dataDir, "srs")
 	configsDir := filepath.Join(dataDir, "configs")
+	nodesDir := filepath.Join(dataDir, "nodes")
+	profilesDir := filepath.Join(dataDir, "profiles")
 
-	for _, d := range []string{dataDir, runDir, srsDir, configsDir} {
+	for _, d := range []string{dataDir, runDir, srsDir, configsDir, nodesDir, profilesDir} {
 		if err := os.MkdirAll(d, 0755); err != nil {
 			log.Fatalf("mkdir %s: %v", d, err)
 		}
@@ -73,7 +74,6 @@ func main() {
 		sig := <-sigCh
 		log.Printf("singa: signal %v — shutting down", sig)
 		manager.Stop()
-		firewall.Cleanup()
 		os.Exit(0)
 	}()
 
