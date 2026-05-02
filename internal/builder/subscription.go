@@ -908,7 +908,7 @@ func ValidateWizardConfig(wizardRaw json.RawMessage) []ValidationError {
 	}
 
 	obIdx := buildObIndex(&wc)    // id -> tag for outbounds
-	rsIdx := buildRSIndex(&wc)    // id -> tag for rulesets
+	_ = buildRSIndex(&wc)         // id -> tag for rulesets (reserved for future validation)
 	dnsSrvIdx := buildDNSSrvIndex(&wc) // id -> tag for DNS servers
 	// Also build tag sets for direct lookup
 	obTags := map[string]bool{"direct": true, "block": true}
@@ -1009,14 +1009,6 @@ func ValidateWizardConfig(wizardRaw json.RawMessage) []ValidationError {
 				errs = append(errs, ValidationError{
 					Location: fmt.Sprintf("dns.rules[%d]", i),
 					Message:  "server 引用了不存在的 DNS 服务器 tag/ID: " + dr.Server,
-				})
-			}
-		}
-		if dr.Outbound != "" && !obTags[dr.Outbound] {
-			if _, ok := obIdx[dr.Outbound]; !ok {
-				errs = append(errs, ValidationError{
-					Location: fmt.Sprintf("dns.rules[%d]", i),
-					Message:  "outbound 引用了不存在的 tag/ID: " + dr.Outbound,
 				})
 			}
 		}
