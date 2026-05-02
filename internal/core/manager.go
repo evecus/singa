@@ -76,6 +76,7 @@ type ProxySettings struct {
 	UDPMode  config.UDPMode `json:"udpMode"`
 	LanProxy bool           `json:"lanProxy"`
 	IPv6     bool           `json:"ipv6"`
+	BypassCN bool           `json:"bypassCN"`
 }
 
 // toProxyModes converts ProxySettings to the config.ProxyModes struct used
@@ -408,7 +409,7 @@ func (m *Manager) Start(p StartParams) error {
 		TProxy:   ports.TProxy,
 		Redirect: ports.Redirect,
 	}
-	if err := firewall.Apply(modes, fwPorts, ps.LanProxy, ps.IPv6, ss.Inbound.TunInterface, m.dataDir, gid, ipf); err != nil {
+	if err := firewall.Apply(modes, fwPorts, ps.LanProxy, ps.IPv6, ps.BypassCN, ss.Inbound.TunInterface, m.dataDir, gid, ipf); err != nil {
 		return fmt.Errorf("firewall: %w", err)
 	}
 
@@ -855,4 +856,3 @@ func (m *Manager) RecoverState() {
 		}
 	}
 }
-
