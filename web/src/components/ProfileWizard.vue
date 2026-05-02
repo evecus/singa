@@ -1320,14 +1320,9 @@ async function save() {
         saveErrors.value = vRes.errors
         // Ask user if they want to save anyway
         const proceed = confirm(
-          '⚠ 配置验证发现以下错误：
-
-' +
-          vRes.errors.map(e => `• [${e.location}] ${e.message}`).join('
-') +
-          '
-
-是否仍然保存？（建议修正后再保存）'
+          `⚠ 配置验证发现以下错误：\n\n` +
+          vRes.errors.map(e => `• [${e.location}] ${e.message}`).join('\n') +
+          `\n\n是否仍然保存？（建议修正后再保存）`
         )
         if (!proceed) { saving.value = false; return }
       }
