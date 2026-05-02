@@ -99,46 +99,14 @@
             <div class="toggle" :class="{ on: ipv6 }" @click="ipv6=!ipv6"></div>
             <span>IPv6 支持</span>
           </label>
+          <label class="flex items-center gap-2" style="cursor:pointer;font-size:13px">
+            <div class="toggle" :class="{ on: bypassCN }" @click="bypassCN=!bypassCN"></div>
+            <span>绕过中国大陆流量</span>
+            <span class="field-hint" style="margin:0">（直连中国大陆 IP，不经过 sing-box 核心）</span>
+          </label>
         </div>
         <button class="btn btn-ghost btn-sm mt-2" @click="saveProxyMode">保存偏好</button>
         <div v-if="proxyModeMsg" class="alert alert-success mt-2 text-xs">{{ proxyModeMsg }}</div>
-      </div>
-
-      <!-- ── 规则集更新 ─────────────────────────────────────────────── -->
-      <div class="card">
-        <div class="card-title">规则集更新</div>
-        <div class="field" style="margin-bottom:10px">
-          <label class="field-label">GitHub 代理加速</label>
-          <div class="field-row">
-            <input class="input input-mono" v-model="ghProxy"
-              placeholder="https://ghfast.top/" />
-            <button class="btn btn-ghost btn-sm" @click="saveProxy">保存</button>
-          </div>
-          <div class="field-hint">
-            用于下载规则集和 sing-box 核心，留空自动尝试内置镜像
-          </div>
-          <div class="flex gap-2 mt-2" style="flex-wrap:wrap">
-            <span class="field-hint">预设：</span>
-            <button v-for="p in proxyPresets" :key="p"
-              class="btn btn-ghost btn-sm" style="font-family:var(--mono);font-size:10px"
-              @click="ghProxy=p">{{ p }}</button>
-          </div>
-        </div>
-        <div class="flex gap-2">
-          <button class="btn btn-primary" @click="updateRules" :disabled="updatingRules">
-            {{ updatingRules ? '更新中…' : '↻ 更新规则集' }}
-          </button>
-        </div>
-        <div v-if="rulesMsg" class="alert mt-2" :class="rulesMsgClass">{{ rulesMsg }}</div>
-        <div v-if="rulesResults.length" style="margin-top:8px;display:flex;flex-direction:column;gap:2px">
-          <div v-for="r in rulesResults" :key="r.file"
-            class="flex gap-2 items-center text-xs py-1"
-            style="border-bottom:1px solid var(--border)">
-            <span :class="r.error ? 'text-red' : 'text-green'">{{ r.error ? '✕' : '✓' }}</span>
-            <span class="monospace flex-1">{{ r.file }}</span>
-            <span class="text-muted">{{ r.error || r.mirror }}</span>
-          </div>
-        </div>
       </div>
 
       <!-- ── Inbound 端口配置 ──────────────────────────────────────── -->
@@ -431,6 +399,7 @@ const tcpMode  = ref('off')
 const udpMode  = ref('off')
 const lanProxy = ref(false)
 const ipv6     = ref(false)
+const bypassCN = ref(false)
 
 const tcpModeOpts = [
   { v: 'off',    l: '禁用',   desc: '不透明代理 TCP' },
@@ -459,6 +428,7 @@ async function saveProxyMode() {
       udpMode:  udpMode.value,
       lanProxy: lanProxy.value,
       ipv6:     ipv6.value,
+      bypassCN: bypassCN.value,
     })
     proxyModeMsg.value = '✓ 已保存'
   } catch (e) {
@@ -723,6 +693,7 @@ onMounted(() => {
     udpMode.value  = r.udpMode  || 'off'
     lanProxy.value = !!r.lanProxy
     ipv6.value     = !!r.ipv6
+    bypassCN.value = !!r.bypassCN
   }).catch(() => {})
 })
 </script>
