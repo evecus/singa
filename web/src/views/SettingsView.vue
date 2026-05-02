@@ -343,21 +343,8 @@
           <button class="btn btn-primary" @click="installSb" :disabled="sbInstalling">
             {{ sbInstalling ? '下载中…' : '↓ 下载/更新核心' }}
           </button>
-          <button class="btn btn-primary" @click="updateRules" :disabled="updatingRules">
-            {{ updatingRules ? '更新中…' : '↻ 更新规则集' }}
-          </button>
         </div>
         <div v-if="sbMsg" class="alert mt-2" :class="sbMsgClass">{{ sbMsg }}</div>
-        <div v-if="rulesMsg" class="alert mt-2" :class="rulesMsgClass">{{ rulesMsg }}</div>
-        <div v-if="rulesResults.length" style="margin-top:8px;display:flex;flex-direction:column;gap:2px">
-          <div v-for="r in rulesResults" :key="r.file"
-            class="flex gap-2 items-center text-xs py-1"
-            style="border-bottom:1px solid var(--border)">
-            <span :class="r.error ? 'text-red' : 'text-green'">{{ r.error ? '✕' : '✓' }}</span>
-            <span class="monospace flex-1">{{ r.file }}</span>
-            <span class="text-muted">{{ r.error || r.mirror }}</span>
-          </div>
-        </div>
       </div>
 
       <!-- ── 关于 ─────────────────────────────────────────────────── -->
