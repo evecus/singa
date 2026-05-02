@@ -20,6 +20,9 @@ var webFS embed.FS
 //go:embed assets/srs
 var srsFS embed.FS
 
+//go:embed assets/cn-bypass.nft
+var cnBypassNft []byte
+
 func main() {
 	var (
 		dirFlag  string
@@ -64,6 +67,14 @@ func main() {
 	// Extract embedded .srs files to data/srs/ (skips if already present)
 	if err := extractSRS(srsFS, srsDir); err != nil {
 		log.Printf("warn: extract srs: %v", err)
+	}
+
+	// Extract cn-bypass.nft to dataDir (always overwrite to keep IP list up to date)
+	cnNftDst := filepath.Join(dataDir, "cn-bypass.nft")
+	if err := os.WriteFile(cnNftDst, cnBypassNft, 0644); err != nil {
+		log.Printf("warn: extract cn-bypass.nft: %v", err)
+	} else {
+		log.Printf("singa: extracted cn-bypass.nft -> %s", cnNftDst)
 	}
 
 	manager := core.NewManager(dataDir, runDir, srsDir)
